@@ -155,7 +155,7 @@ model_classifier = Model([img_input, roi_input], classifier)
 model_all = Model([img_input, roi_input], rpn[:2] + classifier)
 
 
-init_weights = os.path.join(base_path,'models/model_FC_syn_epoch_120.hdf5')
+init_weights = os.path.join(base_path,'models/model_FC_init.hdf5')
 # init_weights = os.path.join(base_path,'model_frcnn_simple_just_train_pascal_flip.hdf5')
 try:
 	print('loading weights from {}'.format(C.base_net_weights))
