@@ -42,7 +42,7 @@ parser.add_option("--output_weight_path", dest="output_weight_path", help="Outpu
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 # parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='./syn_data.pickle' )
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='keras_frcnn/train_data_Wflip_all.pickle' )
+parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
 
 data_type = 'real'
 
