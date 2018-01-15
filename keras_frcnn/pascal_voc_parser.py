@@ -119,7 +119,7 @@ def get_data(input_path):
 			except Exception as e:
 				print(e)
 				continue
-	with open('MAP.pickle','w') as f:
+	with open('pickle_data/mAVP_test_file.pickle','w') as f:
 		pickle.dump([all_imgs, classes_count, class_mapping],f)
 
 	return all_imgs, classes_count, class_mapping
