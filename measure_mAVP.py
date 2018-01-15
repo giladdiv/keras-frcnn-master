@@ -117,12 +117,12 @@ with open(config_output_filename, 'r') as f_in:
 	C = pickle.load(f_in)
 
 ## define all the paths
-test_From_File = False
-use_NN = False
+test_From_File = True
+use_NN = True
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-weight_name = 'model_from_start_base_lock_epoch_365'
+weight_name = 'model_trip_real_only_aeroplane_best'
 C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
 
 ## create txt files
@@ -310,6 +310,8 @@ if not(test_From_File):
 		with open('pickle_data/{}_NN.pickle'.format(weight_name),'w') as f:
 			pickle.dump([inner_NN,azimuth_dict],f)
 			print('saved PICKLE')
+		neigh = KNeighborsClassifier(n_neighbors=1)
+		neigh.fit(inner_NN, azimuth_dict)
 	elif use_NN and os.path.exists('pickle_data/{}_NN.pickle'.format(weight_name)):
          with open('pickle_data/{}_NN.pickle'.format(weight_name)) as f:
             inner_NN, azimuth_dict = pickle.load(f)
@@ -436,8 +438,6 @@ for cls_txt in test_cls[:-1]:
 			   'azimuth': int(text[0][6])}]
 
 	for ii in range(1,len(text)):
-		# if ii == 599:
-		# 	pass
 		det = {'x1': int(text[ii][1]), 'x2': int(text[ii][3]), 'y1': int(text[ii][2]), 'y2': int(text[ii][4]),
 			   'class': cls_txt, 'prob': float(text[ii][5]),
 			   'azimuth': int(text[ii][6])}
@@ -495,8 +495,12 @@ for key in test_cls[:-1]:
 
 		recall_bbox[0,num_positive] = num_correct / count[key]
 		recall_view[0,num_positive] = num_correct_view / count[key]
+
+    ## my new ap calculation, based on Render4CNN
 	avp = VOCap(rec=recall_bbox,prec=accuracy)
 	ap = VOCap(rec=recall_bbox,prec=precision)
+
+    ## old ap calculation
 	# ap = average_precision_score(T_bbox[key], P[key])
 	# avp = average_precision_score(T_view[key], P[key])
 	print('{} AP: {}'.format(key, ap))
