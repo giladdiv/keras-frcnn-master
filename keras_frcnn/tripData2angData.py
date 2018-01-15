@@ -1,8 +1,8 @@
 import os
 import pickle
 
-data_type = 'syn'
-start_path = 'syn_by_obj_data.pickle'
+data_type = 'real'
+start_path = '../pickle_data/train_data_Wflip_pascal.pickle'
 tmp_ind = start_path.index('.pickle')
 sorted_path = start_path[:tmp_ind]+"_sorted"+start_path[tmp_ind:]
 ang_path = start_path[:tmp_ind]+"_sorted_Angles"+start_path[tmp_ind:]
