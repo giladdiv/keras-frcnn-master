@@ -55,10 +55,10 @@ parser.add_option("--input_weight_path", dest="input_weight_path", help="Input p
 
 data_type = 'real'
 if data_type == 'real':
-	parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='keras_frcnn/train_data_Wflip_all.pickle' )
+	parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
 else:
 	parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",
-					  default='keras_frcnn/syn_by_obj_data.pickle')
+					  default='pickle_data/syn_by_obj_data.pickle')
 
 (options, args) = parser.parse_args()
 
@@ -455,7 +455,7 @@ class_mapping_inv = {v: k for k, v in class_mapping.items()}
 print('Starting training')
 
 def generate_data_trip(img_data, C, backend,draw_flag = False):
-	X, Y, img_data,img_orig,ratio = data_generators.get_anchor_gt_trip(img_data, C, backend)
+	X, Y, img_data= data_generators.get_anchor_gt_trip(img_data, C, backend)
 
 	P_rpn = model_rpn.predict_on_batch(X)
 
@@ -594,9 +594,9 @@ for epoch_num in range(num_epochs):
 			if trip_flag and iter_num % C.siam_iter_frequancy == 0:
 				## choose trip
 				rand_cls =trip_cls[np.random.randint(len(trip_cls))]
-				while rand_cls =='bicycle' or rand_cls =='boat':
-					rand_cls =trip_cls[np.random.randint(len(trip_cls))]
-				rand_cls = 'aeroplane'
+				# while rand_cls =='bicycle' or rand_cls =='boat':
+				# 	rand_cls =trip_cls[np.random.randint(len(trip_cls))]
+				# rand_cls = 'aeroplane'
 				cls_input = class_mapping[rand_cls]
 
 				## old triple choose
