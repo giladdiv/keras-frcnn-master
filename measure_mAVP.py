@@ -95,7 +95,7 @@ parser.add_option("--config_filename", dest="config_filename", help=
 				default="config.pickle")
 parser.add_option("-o", "--parser", dest="parser", help="Parser to use. One of simple or pascal_voc",
 				default="pascal_voc"),
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='keras_frcnn/train_data_Wflip_pascal.pickle' )
+parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_pascal.pickle' )
 
 (options, args) = parser.parse_args()
 
@@ -117,12 +117,12 @@ with open(config_output_filename, 'r') as f_in:
 	C = pickle.load(f_in)
 
 ## define all the paths
-test_From_File = True
-use_NN = True
+test_From_File = False
+use_NN = False
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
-weight_name = 'Massa'
-# weight_name = 'model_FC_weight_best'
+# weight_name = 'Massa'
+weight_name = 'model_from_start_base_lock_epoch_365'
 C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
 
 ## create txt files
@@ -143,8 +143,8 @@ C.use_horizontal_flips = False
 C.use_vertical_flips = False
 C.rot_90 = False
 
-if os.path.exists('MAP.pickle'):
-	with open('MAP.pickle') as f:
+if os.path.exists('pickle_data/mAVP_test_file.pickle'):
+	with open('pickle_data/mAVP_test_file.pickle') as f:
 		all_imgs, _, _ = pickle.load(f)
 else:
 	all_imgs, _, _ = get_data(test_path)
@@ -285,7 +285,7 @@ if not(test_From_File):
 						ROIs = ROIs_padded
 
 					[P_cls, P_regr, P_view] = model_classifier_only.predict([P_rpn[2], ROIs])
-					iner_f = model_inner.predict([P_rpn[2], ROIs])
+					inner_f = model_inner.predict([P_rpn[2], ROIs])
 					# oo = model_classifier_only.predict([F, ROIs])
 
 
@@ -302,7 +302,7 @@ if not(test_From_File):
 
 
 						# azimuths[cls_name].append(np.argmax(cls_view, axis=0))
-						inner_NN.append(iner_f[0,ii,:])
+						inner_NN.append(inner_f[0,ii,:])
 						azimuth_dict.append(img_data['bboxes'][0]['azimuth'])
 			except:
 				print('failed on az {}'.format(img_data['bboxes'][0]['azimuth']))
@@ -311,10 +311,11 @@ if not(test_From_File):
 			pickle.dump([inner_NN,azimuth_dict],f)
 			print('saved PICKLE')
 	elif use_NN and os.path.exists('pickle_data/{}_NN.pickle'.format(weight_name)):
-		with open('NN.pickle') as f:
-			inner_NN, azimuth_dict = pickle.load(f)
-		neigh = KNeighborsClassifier(n_neighbors=1)
-		neigh.fit(inner_NN, azimuth_dict)
+         with open('pickle_data/{}_NN.pickle'.format(weight_name)) as f:
+            inner_NN, azimuth_dict = pickle.load(f)
+            print('loaded NN data for current weight')
+         neigh = KNeighborsClassifier(n_neighbors=1)
+         neigh.fit(inner_NN, azimuth_dict)
 
 	tsne_data ={}
 	for idx, img_data in enumerate(test_imgs):
@@ -368,12 +369,13 @@ if not(test_From_File):
 				if np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
 					continue
 
-				cls_name = class_mapping[np.argmax(P_cls[0, ii, :])]
+				cls_name = inv_class_mapping[np.argmax(P_cls[0, ii, :])]
 
 				if cls_name not in bboxes:
 					bboxes[cls_name] = []
 					probs[cls_name] = []
 					azimuths[cls_name] = []
+					inner_res[cls_name] = []
 
 				(x, y, w, h) = ROIs[0, ii, :]
 
