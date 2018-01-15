@@ -219,16 +219,16 @@ def get_data():
 		# with open('data.txt','r') as f2:
 		# 	a  =ymal.safe_load(f2)
 	name = 'train_data_Wflip_pascal'
-	with open('{}.pickle'.format(name), 'w') as f:  # Python 3: open(..., 'wb')
+	with open('../pickle_data/{}.pickle'.format(name), 'w') as f:  # Python 3: open(..., 'wb')
 		pickle.dump([all_imgs, classes_count, class_mapping], f)
 
-	with open('azimuth_distibution.pickle', 'w') as f:  # Python 3: open(..., 'wb')
+	with open('../azimuth_distibution.pickle', 'w') as f:  # Python 3: open(..., 'wb')
 		pickle.dump([azimuth_dist], f)
 
 	for key,item in data_by_cls.items():
 		data_by_cls[key] = sorted(item,key =lambda k: k['bboxes'][0]['azimuth'])
 
-	with open('{}_sorted.pickle'.format(name), 'w') as f:  # Python 3: open(..., 'wb')
+	with open('../pickle_data/{}_sorted.pickle'.format(name), 'w') as f:  # Python 3: open(..., 'wb')
 		pickle.dump(data_by_cls, f)
 	# # Getting back the objects:
 	# with open('train_data.pickle') as f:  # Python 3: open(..., 'rb')
