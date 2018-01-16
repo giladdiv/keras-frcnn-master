@@ -181,7 +181,7 @@ for data_path in data_paths:
 	# 	json.dump(all_imgs, outfile,indent=4, sort_keys=True, ensure_ascii=False)
 	# with open('data.txt','r') as f2:
 	# 	a  =ymal.safe_load(f2)
-with open('test_data_{}.pickle'.format(cls), 'w') as f:  # Python 3: open(..., 'wb')
+with open('pickle_data/test_data_{}.pickle'.format(cls), 'w') as f:  # Python 3: open(..., 'wb')
 	pickle.dump([all_imgs, classes_count, class_mapping], f)
 
 with open('test_dist_{}.pickle'.format(cls), 'w') as f:  # Python 3: open(..., 'wb')
