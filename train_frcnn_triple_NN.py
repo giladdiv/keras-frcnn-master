@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_trip_real.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_trip_real.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -206,7 +206,7 @@ C.rot_90 = bool(options.rot_90)
 C.model_path = options.output_weight_path
 temp_ind = C.model_path.index(".hdf5")
 C.model_path_epoch =C.model_path[:temp_ind]+'_epoch'+C.model_path[temp_ind:]
-
+C.weight_name = os.path.splitext(os.path.basename(options.output_weight_path))[0]
 
 if options.input_weight_path:
 	C.base_net_weights = options.input_weight_path
@@ -254,16 +254,6 @@ with open(config_output_filename, 'wb') as config_f:
 	pickle.dump(C,config_f)
 	print('Config has been written to {}, and can be loaded when testing to ensure correct results'.format(config_output_filename))
 
-# random.shuffle(all_imgs)
-
-# num_imgs = len(all_imgs)
-
-# train_imgs = [s for s in all_imgs]
-# val_imgs = [s for s in all_imgs if s['imageset'] == 'test']
-
-# print('Num train samples {}'.format(len(train_imgs)))
-# print('Num val samples {}'.format(len(val_imgs)))
-
 
 # data_gen_train = data_generators.get_anchor_gt(train_imgs, classes_count, C, K.image_dim_ordering(), mode='train',create_flip=False)
 # data_gen_val = data_generators.get_anchor_gt(val_imgs, classes_count, C, K.image_dim_ordering(), mode='val')
@@ -302,7 +292,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 1
-weight_path_init = os.path.join(base_path, 'models/model_FC_weight_best.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_trip_real_only_aeroplane_best.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -385,8 +375,6 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		# model_trip.compile(loss='mse', optimizer=optimizer_trip)
 
 		## second version for trip distance - cosine distance with softmax
-		# K.zeros(shape=)
-		test_in = Input(shape=view_ref.shape[1:])
 		cos_dp = Lambda(cosine_distance,
 						output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
 
@@ -429,7 +417,7 @@ model_rpn,model_classifier,model_all = build_models(weight_path=weight_path_init
 model_all.save_weights(weight_path_tmp)
 _,_,_,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
 ## get layers
-# test_view_func_NN(model_classifier,model_rpn,model_inner,C)
+test_view_func_NN(model_classifier,model_rpn,model_inner,C)
 # classifier_not_trainable_layers = [i for i,x in enumerate(model_classifier.layers) if x.trainable == False]
 
 

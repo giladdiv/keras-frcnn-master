@@ -29,10 +29,10 @@ sys.setrecursionlimit(40000)
 
 def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 	test_cls = 'aeroplane'
-	input_train_file = 'keras_frcnn/train_data_Wflip_all.pickle'
+	input_train_file = 'pickle_data/train_data_Wflip_all.pickle'
 
 	## read the training data from pickle file or from annotations
-	test_pickle = '/home/gilad/ssd/keras-frcnn-master/test_data_{}.pickle'.format(test_cls)
+	test_pickle = 'pickle_data/test_data_{}.pickle'.format(test_cls)
 	if os.path.exists(test_pickle):
 		with open(test_pickle) as f:
 			all_imgs, classes_count,_ = pickle.load(f)
@@ -80,34 +80,6 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 		img = np.expand_dims(img, axis=0)
 		return img
 
-	def draw_bbox(img,bbox,prob,azimuth,ratio):
-		# new_boxes, new_probs, new_az = roi_helpers.non_max_suppression_fast(bbox, prob, azimuth, overlap_thresh=0.3,use_az=True)
-		new_boxes=bbox
-		new_az = azimuth
-		new_probs = prob
-		for jk in range(new_boxes.shape[0]):
-			(x1, y1, x2, y2) = new_boxes[jk, :]
-
-			(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
-
-			cv2.rectangle(img, (real_x1, real_y1), (real_x2, real_y2),
-						  (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
-			# cv2.rectangle(img,(bbox_gt['x1'], bbox_gt['y1']), (bbox_gt['x2'], bbox_gt['y2']), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
-
-			# textLabel = '{}: {},azimuth : {}'.format(key,int(100*new_probs[jk]),new_az[jk])
-			textLabel = 'azimuth : {}'.format(new_az[jk])
-
-			all_dets.append((key, 100 * new_probs[jk]))
-
-			(retval, baseLine) = cv2.getTextSize(textLabel, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
-			textOrg = (real_x1, real_y1 + 15)
-
-			cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
-						  (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (0, 0, 0), 2)
-			cv2.rectangle(img, (textOrg[0] - 5, textOrg[1] + baseLine - 5),
-						  (textOrg[0] + retval[0] + 5, textOrg[1] - retval[1] - 5), (255, 255, 255), -1)
-			cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-		return img
 
 	def format_img(img, C):
 		""" formats an image for model prediction based on config """
@@ -156,13 +128,6 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 	C.num_rois = 32
 
 
-	## read the training data from pickle file or from annotations
-	test_pickle = os.path.join(base_path,'pickle_data/test_data_{}.pickle'.format(test_cls))
-	if os.path.exists(test_pickle):
-		with open(test_pickle) as f:
-			all_imgs, classes_count, class_mapping = pickle.load(f)
-
-
 	obj_num = 0
 	bbox_threshold_orig = 0.6
 	th_bbox = 0.4
@@ -179,9 +144,9 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 	im_file = []
 	ind = []
 	for ii in range(360):
-		for jj in range(5):
+		for jj in range(3):
 			try:
-				im_file.append(trip_data[test_cls][ii][0])
+				im_file.append(trip_data[test_cls][ii][jj])
 				ind.append(ii)
 			except:
 				if jj == 0:
@@ -189,6 +154,7 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 	data_gen_train = data_generators.get_anchor_gt(im_file, [], C, K.image_dim_ordering(), mode='test')
 	azimuth_dict = []
 	inner_NN = []
+	azimuths =[]
 	for tt in ind:
 		try:
 			# print ('im num {}'.format(good_img))
@@ -225,7 +191,7 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 				# oo = model_classifier_only.predict([F, ROIs])
 
 
-				for ii in range(R.shape[0]):
+				for ii in range(len(sel_samples)):
 
 					if np.max(P_cls[0, ii, :]) < bbox_threshold_orig or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
 						continue
@@ -246,11 +212,11 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 		except:
 			print('failed on az {}'.format(img_data['bboxes'][0]['azimuth']))
 	## calculating some mean feature map for every az
-	with open('NN.pickle','w') as f:
+	with open('pickle_data/{}_NN.pickle'.format(C.weight_name ),'w') as f:
 		pickle.dump([inner_NN,azimuth_dict],f)
 		print('saved PICKLE')
 
-	with open('NN.pickle') as f:
+	with open('pickle_data/{}_NN.pickle'.format(C.weight_name )) as f:
 		inner_NN,azimuth_dict = pickle.load(f)
 	neigh = KNeighborsClassifier(n_neighbors=1)
 	neigh.fit(inner_NN, azimuth_dict)
@@ -284,7 +250,7 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 		width,height = int(im_file["width"]), int(im_file["height"])
 		resized_width, resized_height= data_generators.get_new_img_size(width, height, C.im_size)
 		# [_,_, F] = model_rpn.predict(X)
-
+		ROIs =[]
 		## pass on all the labels in the image, some of them are not equal to test_cls
 		for bbox_gt in im_file['bboxes']:
 			no_bbox_flag = 1
@@ -296,76 +262,72 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 				az_gt = bbox_gt['azimuth']
 				el_gt = bbox_gt['elevation']
 				t_gt = bbox_gt['tilt']
+				if len(ROIs)==0:
+					# apply the spatial pyramid pooling to the proposed regions
+					bboxes = {}
+					probs = {}
+					azimuths ={}
+					inner_res = {}
+					if bbox_gt['class'] == test_cls and bbox_threshold == bbox_threshold_orig :
+						obj_num += 1
+						# print ('obj num {}'.format(obj_num))
 
-				# apply the spatial pyramid pooling to the proposed regions
-				bboxes = {}
-				probs = {}
-				azimuths ={}
-				inner_res = {}
-				if bbox_gt['class'] == test_cls and bbox_threshold == bbox_threshold_orig :
-					obj_num += 1
-					# print ('obj num {}'.format(obj_num))
+					for jk in range(R.shape[0]//C.num_rois + 1):
+						ROIs = np.expand_dims(R[C.num_rois*jk:C.num_rois*(jk+1), :], axis=0)
+						if ROIs.shape[1] == 0:
+							break
 
-				for jk in range(R.shape[0]//C.num_rois + 1):
-					ROIs = np.expand_dims(R[C.num_rois*jk:C.num_rois*(jk+1), :], axis=0)
-					if ROIs.shape[1] == 0:
-						break
+						if jk == R.shape[0]//C.num_rois:
+							#pad R
+							curr_shape = ROIs.shape
+							target_shape = (curr_shape[0],C.num_rois,curr_shape[2])
+							ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
+							ROIs_padded[:, :curr_shape[1], :] = ROIs
+							ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
+							ROIs = ROIs_padded
 
-					if jk == R.shape[0]//C.num_rois:
-						#pad R
-						curr_shape = ROIs.shape
-						target_shape = (curr_shape[0],C.num_rois,curr_shape[2])
-						ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
-						ROIs_padded[:, :curr_shape[1], :] = ROIs
-						ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
-						ROIs = ROIs_padded
-
-					[P_cls, P_regr,P_view] = model_classifier.predict([X, ROIs])
-					inner_out = model_inner.predict([X, ROIs])
-					# oo = model_classifier_only.predict([F, ROIs])
-
-
-					for ii in range(P_cls.shape[1]):
-
-						if np.max(P_cls[0, ii, :]) < bbox_threshold or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
-							continue
-
-						## get class from the net
-						# cls_num = np.argmax(P_cls[0, ii, :])
-
-						## use gt class
-						cls_num = gt_cls_num
-
-						cls_name = inv_class_mapping[cls_num]
-						cls_view = P_view[0, ii, 360*cls_num:360*(cls_num+1)]
+						[P_cls, P_regr,P_view] = model_classifier.predict([X, ROIs])
+						inner_out = model_inner.predict([X, ROIs])
+						# oo = model_classifier_only.predict([F, ROIs])
 
 
-						if cls_name not in bboxes:
-							bboxes[cls_name] = []
-							probs[cls_name] = []
-							azimuths[cls_name] = []
-							inner_res[cls_name] = []
+						for ii in range(P_cls.shape[1]):
 
-						(x, y, w, h) = ROIs[0, ii, :]
+							if np.max(P_cls[0, ii, :]) < bbox_threshold or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
+								continue
 
-						try:
-							(tx, ty, tw, th) = P_regr[0, ii, 4*cls_num:4*(cls_num+1)]
-							tx /= C.classifier_regr_std[0]
-							ty /= C.classifier_regr_std[1]
-							tw /= C.classifier_regr_std[2]
-							th /= C.classifier_regr_std[3]
-							x, y, w, h = roi_helpers.apply_regr(x, y, w, h, tx, ty, tw, th)
-						except:
-							pass
-						bboxes[cls_name].append([C.rpn_stride*x, C.rpn_stride*y, C.rpn_stride*(x+w), C.rpn_stride*(y+h)])
-						probs[cls_name].append(np.max(P_cls[0, ii, :]))
-						azimuths[cls_name].append(np.argmax(cls_view,axis=0))
-						inner_res[cls_name].append(inner_out[0,ii,:])
+							## get class from the net
+							# cls_num = np.argmax(P_cls[0, ii, :])
+
+							## use gt class
+							cls_num = gt_cls_num
+
+							cls_name = inv_class_mapping[cls_num]
+							cls_view = P_view[0, ii, 360*cls_num:360*(cls_num+1)]
 
 
-				all_dets = []
-				if len(bboxes)==0:
-					bbox_threshold -= 0.1
+							if cls_name not in bboxes:
+								bboxes[cls_name] = []
+								probs[cls_name] = []
+								azimuths[cls_name] = []
+								inner_res[cls_name] = []
+
+							(x, y, w, h) = ROIs[0, ii, :]
+
+							try:
+								(tx, ty, tw, th) = P_regr[0, ii, 4*cls_num:4*(cls_num+1)]
+								tx /= C.classifier_regr_std[0]
+								ty /= C.classifier_regr_std[1]
+								tw /= C.classifier_regr_std[2]
+								th /= C.classifier_regr_std[3]
+								x, y, w, h = roi_helpers.apply_regr(x, y, w, h, tx, ty, tw, th)
+							except:
+								pass
+							bboxes[cls_name].append([C.rpn_stride*x, C.rpn_stride*y, C.rpn_stride*(x+w), C.rpn_stride*(y+h)])
+							probs[cls_name].append(np.max(P_cls[0, ii, :]))
+							azimuths[cls_name].append(np.argmax(cls_view,axis=0))
+							inner_res[cls_name].append(inner_out[0,ii,:])
+
 				# cv2.rectangle(img_gt, (bbox_gt['x1'], bbox_gt['y1']), (bbox_gt['x2'], bbox_gt['y2']), (int(class_to_color[test_cls][0]), int(class_to_color[test_cls][1]), int(class_to_color[test_cls][2])), 2)
 				for key in bboxes:
 					# if 1:
