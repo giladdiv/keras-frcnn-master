@@ -49,10 +49,10 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_tripvideo.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripvideo.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='keras_frcnn/train_data_Wflip_pascal.pickle' )
+parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_pascal.pickle' )
 
 (options, args) = parser.parse_args()
 
@@ -80,6 +80,16 @@ def mat_lambda_output_shape(shapes):
 	shape1 = shapes
 	return(shape1[0],last_layer[0],data_len)
 
+def cosine_distance(vects):
+	x, y = vects
+	# x = tf.Print(x,[tf.shape(x)])
+	dis = K.sum(x*y,axis=2)
+	return K.reshape(dis,shape=(-1,32,1))
+
+
+def cosine_dist_output_shape(shapes):
+    shape1, shape2 = shapes
+    return (shape1[0],shape1[1],1)
 
 
 def create_mat_flip():
@@ -128,17 +138,6 @@ def eucl_dist_output_shape(shapes):
     shape1, shape2 = shapes
     return (shape1[0], 1)
 
-
-def cosine_distance(vects):
-	x, y = vects
-	# x = tf.Print(x,[tf.shape(x)])
-	dis = K.sum(K.l2_normalize(x,axis =1) * K.l2_normalize(y,axis =1),axis=2)
-	return K.reshape(dis,shape=(-1,32,1))
-
-
-def cosine_dist_output_shape(shapes):
-    shape1, shape2 = shapes
-    return (shape1[0],shape1[1],1)
 
 def contrastive_loss(y_true, y_pred):
     '''Contrastive loss from Hadsell-et-al.'06
@@ -217,13 +216,13 @@ else:
 ##
 
 ## read sorted data
-# sorted_path = options.input_train_file
-# tmp_ind = sorted_path.index('.pickle')
-# sorted_path = sorted_path[:tmp_ind]+"_sorted_Angles"+sorted_path[tmp_ind:]
-# if os.path.exists(sorted_path):
-# 	print("loading sorted data")
-# 	with open(sorted_path) as f:
-# 		trip_data = pickle.load(f)
+sorted_path = options.input_train_file
+tmp_ind = sorted_path.index('.pickle')
+sorted_path = sorted_path[:tmp_ind]+"_sorted_Angles"+sorted_path[tmp_ind:]
+if os.path.exists(sorted_path):
+	print("loading sorted data")
+	with open(sorted_path) as f:
+		trip_data = pickle.load(f)
 
 
 if 'bg' not in classes_count:
@@ -233,7 +232,7 @@ if 'bg' not in classes_count:
 class_mapping = {'sheep': 5, 'bottle': 8, 'horse': 15, 'bg': 20, 'bicycle': 17, 'motorbike': 16, 'cow': 12, 'sofa': 14, 'dog': 0, 'bus': 11, 'cat': 10, 'person': 6, 'train': 4, 'diningtable': 13, 'aeroplane': 19, 'car': 1, 'pottedplant': 2, 'tvmonitor': 7, 'chair': 9, 'bird': 3, 'boat': 18}
 C.class_mapping = class_mapping
 trip_cls = ['aeroplane','bicycle','bus','car','chair','diningtable','motorbike','sofa','train', 'tvmonitor']
-
+C.num_classes = len(class_mapping)
 inv_map = {v: k for k, v in class_mapping.items()}
 
 print('Training images per class:')
@@ -294,7 +293,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 1
-weight_path_init = os.path.join(base_path, 'models/model_FC_best.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_FC_weight_best.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -316,7 +315,11 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 
 	# classifier = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count), trainable_cls=trainable_cls,trainable_view=trainable_view)
-	classifier,iner_layer = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count), trainable_cls=trainable_cls,trainable_view=trainable_view)
+	classifier,inner_layer = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=C.num_classes, trainable_cls=trainable_cls,trainable_view=trainable_view)
+
+
+	# L2 normalization for inner layer
+	inner_layer = Lambda(lambda x: tf.nn.l2_normalize(x,dim =2))(inner_layer)
 
 	model_rpn = Model(img_input, rpn[:2])
 
@@ -353,7 +356,7 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 	if create_siam:
 		model_view_only = Model([img_input, roi_input], classifier[2])
-		model_inner = Model([img_input, roi_input],iner_layer)
+		model_inner = Model([img_input, roi_input],inner_layer)
 		## use the feature map after rpn,train only the view module
 		view_ref = model_inner([img_input_ref,roi_input_ref])
 		view_dp = model_inner([img_input_dp,roi_input_dp])
@@ -373,16 +376,15 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		# model_trip.compile(loss='mse', optimizer=optimizer_trip)
 
 		## second version for trip distance - cosine distance with softmax
-
-		cos_dp =Lambda(cosine_distance,
-				output_shape=cosine_dist_output_shape)([view_ref,view_dp]) # cosine dist <X_ref,X_dp>
+		cos_dp = Lambda(cosine_distance,
+						output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
 
 		cos_dm = Lambda(cosine_distance,
-				output_shape=cosine_dist_output_shape)([view_ref,view_dm]) # cosine dist <X_ref,X_dm>
-		dist = Concatenate(axis=2)([cos_dm,cos_dp])
-		trip = Activation('softmax')(dist) #should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
-		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
-		model_trip.compile(optimizer = optimizer_trip,loss='categorical_crossentropy')
+						output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
+		dist = Concatenate(axis=2)([cos_dm, cos_dp])
+		trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
+		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm], trip)
+		model_trip.compile(optimizer=optimizer_trip, loss='categorical_crossentropy')
 
 		model_view_only.compile(optimizer='sgd',loss=losses.class_loss_view(len(classes_count),roi_num=C.num_rois),metrics=['accuracy'])
 		return model_rpn, model_classifier, model_all, model_inner, model_trip
@@ -460,8 +462,8 @@ best_loss = np.Inf
 class_mapping_inv = {v: k for k, v in class_mapping.items()}
 print('Starting training')
 
-def generate_data_trip(img_data, C, backend):
-	X, Y, img_data = data_generators.get_anchor_gt_trip(img_data, C, backend)
+def generate_data_trip(img_data, C, backend,draw_flag = False):
+	X, Y, img_data= data_generators.get_anchor_gt_trip(img_data, C, backend)
 
 	P_rpn = model_rpn.predict_on_batch(X)
 
@@ -479,6 +481,14 @@ def generate_data_trip(img_data, C, backend):
 		else:
 			selected_pos_samples = np.random.choice(pos_samples[0], C.num_rois, replace=False).tolist()
 	R,Y_view = roi_helpers.prep_flip(X2[:,selected_pos_samples,:],Y_view[:,selected_pos_samples,:],C)
+
+	if draw_flag:
+		Im = cv2.imread(img_data['filepath'])
+		key = img_data['bboxes'][0]['class']
+		azimuth = img_data['bboxes'][0]['azimuth']
+		bbox = np.array([[img_data['bboxes'][0]['x1'],img_data['bboxes'][0]['y1'],img_data['bboxes'][0]['x2'],img_data['bboxes'][0]['y2']]])
+		img = img_helpers.draw_bbox(Im, bbox, 0, [azimuth], 1, class_mapping_inv, key)
+		img_helpers.display_image(img,0)
 	return X,R,Y_view
 
 
@@ -745,12 +755,11 @@ for epoch_num in range(num_epochs):
 						if len(idx_dm) < bbox_num:
 							continue
 
-						if True:
-							continue
 						##pad ROI to have C.num_roi
 						R_ref_idx = roi_helpers.prep_roi_siam(R_ref[idx_ref, :], C)
 						R_dp_idx = roi_helpers.prep_roi_siam(R_dp[idx_dp, :], C)
 						R_dm_idx = roi_helpers.prep_roi_siam(R_dm[idx_dm, :], C)
+						choose_img = False
 					except:
 						pass
 				## calc siam on all the network
