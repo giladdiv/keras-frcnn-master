@@ -295,7 +295,7 @@ if not(test_From_File):
 						if np.max(P_cls[0, ii, :]) < bbox_threshold_orig or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
 							continue
 
-						## use gt class
+						## use gt class1
 						cls_num = gt_cls_num
 
 						cls_name = inv_class_mapping[cls_num]
