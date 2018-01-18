@@ -112,8 +112,8 @@ def get_data():
 											   'height': element_height, 'bboxes': [], 'viewpoint': []}
 							annotation_data_cls = copy.deepcopy(annotation_data)
 							annotation_data['imageset'] = 'train'
-							# if flip_flag :
-							if flip_flag and data_type =='pascal':
+							if flip_flag :
+							# if flip_flag and data_type =='pascal':
 								string = annotation_data['filepath']
 								img = cv2.imread(string)
 								img_lr = cv2.flip(img, 1)
@@ -178,8 +178,8 @@ def get_data():
 							annotation_data['bboxes'].append(curr_bbox)
 							azimuth_dist[class_name].append(az)
 							data_by_cls[class_name].append(data_cls)
-							if flip_flag and data_type =='pascal':
-							# if flip_flag:
+							# if flip_flag and data_type =='pascal':
+							if flip_flag:
 								## x1 and x2 need to be replaced when fliping the image
 								annotation_data_lr['viewpoint_data'] = annotation_data['viewpoint_data']
 								curr_bbox ={'class': class_name, 'x1': element_width - x2, 'x2': element_width - x1, 'y1': y1,'y2': y2, 'difficult': difficulty, 'azimuth': (360 - az) % 360, 'elevation': el,
@@ -194,8 +194,8 @@ def get_data():
 
 					if annotation_data['imageset'] !='test':
 						all_imgs.append(annotation_data)
-						if flip_flag and data_type =='pascal':
-						# if flip_flag:
+						# if flip_flag and data_type =='pascal':
+						if flip_flag:
 							all_imgs.append(annotation_data_lr)
 
 					if visualise:
@@ -218,7 +218,7 @@ def get_data():
 		# 	json.dump(all_imgs, outfile,indent=4, sort_keys=True, ensure_ascii=False)
 		# with open('data.txt','r') as f2:
 		# 	a  =ymal.safe_load(f2)
-	name = 'train_data_Wflip_pascal'
+	name = 'train_data_Wflip_all'
 	with open('../pickle_data/{}.pickle'.format(name), 'w') as f:  # Python 3: open(..., 'wb')
 		pickle.dump([all_imgs, classes_count, class_mapping], f)
 

@@ -29,9 +29,10 @@ def format_img_size(img, C):
     return img, ratio
 
 
-def format_img_channels(img, C):
+def format_img_channels(img, C,rgb = False):
     """ formats the image channels based on config """
-    img = img[:, :, (2, 1, 0)]
+    if not(rgb):
+        img = img[:, :, (2, 1, 0)] ## not used because imageio read as RGB and not BGR like cv2
     img = img.astype(np.float32)
     img[:, :, 0] -= C.img_channel_mean[0]
     img[:, :, 1] -= C.img_channel_mean[1]
@@ -73,16 +74,16 @@ def draw_bbox(img, bbox, prob, azimuth, ratio,class_mapping,key):
     return img
 
 
-def format_img(img, C):
+def format_img(img, C,rgb = False):
     """ formats an image for model prediction based on config """
     img, ratio = format_img_size(img, C)
-    img = format_img_channels(img, C)
+    img = format_img_channels(img, C,rgb=rgb)
     return img, ratio
 
 
 def display_image(img,title_id):
     cv2.putText(img, str(title_id), (30,30), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-    img1 = img[:, :, (2, 1, 0)]
-    # img1=img
+    # img1 = img[:, :, (2, 1, 0)]
+    img1=img
     im = Image.fromarray(img1.astype('uint8'), 'RGB')
     im.show()

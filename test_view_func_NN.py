@@ -155,8 +155,10 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 	azimuth_dict = []
 	inner_NN = []
 	azimuths =[]
-	for tt in ind:
+	for tt in range(len(ind)):
 		try:
+			if tt%100 == 0:
+				print ('worked on {}/{}'.format(tt,len(ind)))
 			# print ('im num {}'.format(good_img))
 			X, Y, img_data = next(data_gen_train)
 

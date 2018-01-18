@@ -874,7 +874,7 @@ def overlap_ratio(boxes, probs, overlap_thresh=0.7):
 		overlap = area_int/(area_union + 1e-6)
 
 		# delete all indexes from the index list that have
-		idx_overlap.append(np.concatenate(([last],np.where(overlap > overlap_thresh)[0])))
+		idx_overlap.append(np.concatenate(([i],idxs[np.where(overlap > overlap_thresh)[0]])))
 		idxs = np.delete(idxs, np.concatenate(([last],np.where(overlap > overlap_thresh)[0])))
 
 

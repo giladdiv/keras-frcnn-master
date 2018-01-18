@@ -25,6 +25,7 @@ import tensorflow as tf
 from keras.utils import plot_model
 import copy
 from test_view_func import *
+from test_view_func_NN import *
 from operator import  itemgetter
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
@@ -52,7 +53,7 @@ parser.add_option("--config_filename", dest="config_filename", help=
 parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripvideo.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_pascal.pickle' )
+parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
 
 (options, args) = parser.parse_args()
 
@@ -199,7 +200,7 @@ C.rot_90 = bool(options.rot_90)
 C.model_path = options.output_weight_path
 temp_ind = C.model_path.index(".hdf5")
 C.model_path_epoch =C.model_path[:temp_ind]+'_epoch'+C.model_path[temp_ind:]
-
+C.weight_name = os.path.splitext(os.path.basename(options.output_weight_path))[0]
 
 if options.input_weight_path:
 	C.base_net_weights = options.input_weight_path
@@ -302,10 +303,10 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 	##
 	if train_view_only:
 		trainable_cls = False
-		trainable_view = True
+		trainable_view = False
 	else:
 		trainable_cls = False
-		trainable_view = True
+		trainable_view = False
 	# define the base network (resnet here, can be VGG, Inception, etc)
 	shared_layers = nn.nn_base(img_input, trainable= trainable_cls)
 
@@ -403,13 +404,13 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 
 ## video loading
-vid_classes = ['aeroplane','car','motorbike','bus','boat']
-frame_dist = [300,20,20,50,20]
+vid_classes = ['aeroplane','car','motorbike','bus','boat','chair']
+frame_dist = [300,20,20,50,20,20]
 start_frame = 0
 vid,end_frame,dist_frame = {},{},{}
 for ii,vid_class in enumerate(vid_classes):
 	dist_frame[vid_class] = frame_dist[ii]
-	for jj in range(5):
+	for jj in range(10):
 		try:
 			video_filename = os.path.join(base_path, 'video/{}{}.mp4'.format(vid_class,jj))
 			if jj == 0:
@@ -438,6 +439,7 @@ model_all.save_weights(weight_path_tmp)
 _,_,_,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
 ## get layers
 # test_view_func(C, model_rpn, model_classifier)
+# test_view_func_NN(model_classifier,model_rpn,model_inner,C)
 # classifier_not_trainable_layers = [i for i,x in enumerate(model_classifier.layers) if x.trainable == False]
 
 
@@ -492,8 +494,8 @@ def generate_data_trip(img_data, C, backend,draw_flag = False):
 	return X,R,Y_view
 
 
-def prep_siam(img,C):
-	X,ratio= img_helpers.format_img(img,C)
+def prep_siam(img,C,rgb = False):
+	X,ratio= img_helpers.format_img(img,C,rgb =rgb)
 	X = np.transpose(X, (0, 2, 3, 1))
 	P_rpn = model_rpn.predict_on_batch(X)
 	R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], C, K.image_dim_ordering(), use_regr=True, overlap_thresh=0.7,
@@ -566,6 +568,9 @@ def calc_roi_siam(Im,R,X,title_id,gt_cls_num,draw_flag = False):
 	azimuth = np.array(azimuths[key])
 	idx_overlap = roi_helpers.overlap_ratio(bbox, prob, overlap_thresh=0.7)
 	idx_overlap.sort(key = lambda k: len(k))
+	bbox = bbox[idx_overlap[-1]]
+	prob = prob[idx_overlap[-1]]
+	azimuth = azimuth[idx_overlap[-1]]
 	idx = itemgetter(*idx_overlap[-1])(idx)
 	if draw_flag:
 		img = img_helpers.draw_bbox(Im, bbox, prob, azimuth, ratio, class_mapping_inv, key)
@@ -645,8 +650,8 @@ for epoch_num in range(num_epochs):
 			numNonBg = C.num_rois-np.sum(np.argmax(Y1[:, sel_samples, :],axis=2)==20)
 			countNum += numNonBg
 			ang = np.max(np.argmax(Y_view[:, sel_samples, :][0,:,:360],axis=1))
-			# loss_class = [0,0,0,0,0,0,0]
-			loss_class = model_classifier.train_on_batch([X, X2[:, sel_samples, :]], [Y1[:, sel_samples, :], Y2[:, sel_samples, :],Y_view[:, sel_samples, :]])
+			loss_class = [0,0,0,0,0,0,0]
+			# loss_class = model_classifier.train_on_batch([X, X2[:, sel_samples, :]], [Y1[:, sel_samples, :], Y2[:, sel_samples, :],Y_view[:, sel_samples, :]])
 			if iter_num%500 == 0 and numNonBg !=0:
 				out_cls,out_reg,out_az = model_classifier.predict([X, X2[:, sel_samples, :]])
 				gt_label = np.argmax(Y1[:, sel_samples, :],axis=2)
@@ -675,8 +680,9 @@ for epoch_num in range(num_epochs):
 			# losses[iter_num, 4] = loss_class[0]
 			# weight_t= np.mean(model_classifier.layers[39].get_weights()[0])
 			iter_num += 1
-			progbar.update(iter_num, [('view_cls', losses[:iter_num, 4].sum(0)/(losses[:iter_num, 4]!=0).sum(0)),('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
-									  ('detector_cls', np.mean(losses[:iter_num, 2])), ('detector_regr', np.mean(losses[:iter_num, 3]))])
+
+			# progbar.update(iter_num, [('view_cls', losses[:iter_num, 4].sum(0)/(losses[:iter_num, 4]!=0).sum(0)),('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
+			# 						  ('detector_cls', np.mean(losses[:iter_num, 2])), ('detector_regr', np.mean(losses[:iter_num, 3]))])
 			# progbar.update(iter_num, [('view_cls', losses[:iter_num, 4].sum(0)/(losses[:iter_num, 4]!=0).sum(0))])
 				# print('iter time {}'.format(time.time()-t_start))
 
@@ -724,6 +730,8 @@ for epoch_num in range(num_epochs):
 				choose_img = True
 				while choose_img:
 					try:
+						# trip_cls = 'chair'
+						# trip_idx = 0
 						trip_cls = random.choice(vid_classes)
 						cls_input = class_mapping[trip_cls]
 						trip_idx = np.random.randint(len(vid[trip_cls]))
@@ -740,18 +748,18 @@ for epoch_num in range(num_epochs):
 
 
 						# get the image in the right format and ROI
-						X_ref, R_ref, ratio = prep_siam(img=img_ref, C=C)
-						X_dp, R_dp, _ = prep_siam(img=img_dp, C=C)
-						X_dm, R_dm, _ = prep_siam(img=img_dm, C=C)
+						X_ref, R_ref, ratio = prep_siam(img=img_ref, C=C,rgb=True)
+						X_dp, R_dp, _ = prep_siam(img=img_dp, C=C,rgb=True)
+						X_dm, R_dm, _ = prep_siam(img=img_dm, C=C,rgb=True)
 						bbox_num = 4
 						##run the network and get the best bboxes
-						_, prob_ref, azimuth_ref, idx_ref = calc_roi_siam(Im=img_ref, R=R_ref, X=X_ref, title_id=add_id(),gt_cls_num= cls_input, draw_flag=True)
+						_, prob_ref, azimuth_ref, idx_ref = calc_roi_siam(Im=img_ref, R=R_ref, X=X_ref, title_id=add_id(),gt_cls_num= cls_input, draw_flag=False)
 						if len(idx_ref) < bbox_num:
 							continue
 						_, prob_dp, azimuth_dp, idx_dp = calc_roi_siam(Im=img_dp, R=R_dp, X=X_dp, title_id=add_id(),gt_cls_num = cls_input,draw_flag= False)
 						if len(idx_dp) < bbox_num:
 							continue
-						_, prob_dm, azimuth_dm, idx_dm = calc_roi_siam(Im=img_dm, R=R_dm, X=X_dm, title_id=add_id(),gt_cls_num = cls_input,draw_flag= True)
+						_, prob_dm, azimuth_dm, idx_dm = calc_roi_siam(Im=img_dm, R=R_dm, X=X_dm, title_id=add_id(),gt_cls_num = cls_input,draw_flag= False)
 						if len(idx_dm) < bbox_num:
 							continue
 
@@ -766,30 +774,35 @@ for epoch_num in range(num_epochs):
 				az_siam = np.argmax(np.bincount(azimuth_ref))
 				# Y_siam = roi_helpers.az2vec(az=az_siam,class_num=cls_input,roi_num=C.num_rois,class_mapping = class_mapping)
 				## train on video image only the view model
-				model_classifier.save_weights(weight_path_tmp)
-				model_inner.load_weights(weight_path_tmp, by_name=True)
-
-				loss_before = model_trip.predict([X_ref, R_ref_idx, X_dp, R_dp_idx,X_dm, R_dm_idx])
-				# view_out_before = model_classifier.predict([X_ref, R_ref_idx])[2]
-				# out_before = np.argmax(view_out_before[0, :len(idx_ref), 360 * cls_input:360 * (cls_input + 1)],
-				# 					   axis=1)
-
+				# model_classifier.save_weights(weight_path_tmp)
+				# model_inner.load_weights(weight_path_tmp, by_name=True)
 				model_trip.train_on_batch([X_ref, R_ref_idx, X_dp, R_dp_idx,X_dm, R_dm_idx], np.array([np.tile([0,1],(32,1))]))
-				model_inner.save_weights(weight_path_tmp)
-				model_classifier.load_weights(weight_path_tmp, by_name=True)
 
-				loss_after = model_trip.predict([X_ref, R_ref_idx, X_dp, R_dp_idx,X_dm, R_dm_idx])
-				# view_out_after = model_classifier.predict([X_ref, R_ref_idx])[2]
-				# out_after = np.argmax(view_out_after[0, :len(idx_ref), 360 * cls_input:360 * (cls_input + 1)],
-				# 					  axis=1)
 
-				# print('\n')
-				# print('az before {} \naz after{}'.format(out_before, out_after))
+				if iter_num %50 ==0:
+					loss_before = model_trip.predict([X_ref, R_ref_idx, X_dp, R_dp_idx,X_dm, R_dm_idx])
+					# view_out_before = model_classifier.predict([X_ref, R_ref_idx])[2]
+					# out_before = np.argmax(view_out_before[0, :len(idx_ref), 360 * cls_input:360 * (cls_input + 1)],
+					# 					   axis=1)
 
-				print('\n')
-				print('class {}'.format(cls_input))
-				print('loss before {} \nloss after{}'.format(np.mean(loss_before,axis=1),np.mean(loss_after,axis=1)))
+					model_trip.train_on_batch([X_ref, R_ref_idx, X_dp, R_dp_idx,X_dm, R_dm_idx], np.array([np.tile([0,1],(32,1))]))
 
+					# model_inner.save_weights(weight_path_tmp)
+					# model_classifier.load_weights(weight_path_tmp, by_name=True)
+
+					loss_after = model_trip.predict([X_ref, R_ref_idx, X_dp, R_dp_idx,X_dm, R_dm_idx])
+					# view_out_after = model_classifier.predict([X_ref, R_ref_idx])[2]
+					# out_after = np.argmax(view_out_after[0, :len(idx_ref), 360 * cls_input:360 * (cls_input + 1)],
+					# 					  axis=1)
+
+					# print('\n')
+					# print('az before {} \naz after{}'.format(out_before, out_after))
+
+					print('\n')
+					print('class {}'.format(cls_input))
+					print('loss before {} \nloss after{}'.format(np.mean(loss_before,axis=1),np.mean(loss_after,axis=1)))
+				elif iter_num%10 == 0:
+					print ('itr : {}, epoch {}'.format(iter_num,epoch_num))
 				## calc siam only on the view module
 				# if len(idx_l)>6:
 				# 	model_classifier.save_weights(weight_path_tmp)
@@ -859,10 +872,10 @@ for epoch_num in range(num_epochs):
 				if epoch_num%epoch_save_num == 0 and epoch_num !=0:
 					temp_ind = C.model_path.index(".hdf5")
 					C.model_path_epoch = C.model_path[:temp_ind] + '_epoch_{}'.format(epoch_num) + C.model_path[temp_ind:]
-					tmp_succ,MAP =test_view_func(C, model_rpn, model_classifier)
+					tmp_succ =test_view_func_NN(model_classifier,model_rpn,model_inner,C)
 					succ_vec[0, int(epoch_num / epoch_save_num)] =tmp_succ
-					# model_view_only.save_weights(weight_path_tmp)
-					# model_classifier.load_weights(weight_path_tmp,by_name=True)
+					model_inner.save_weights(weight_path_tmp)
+					model_classifier.load_weights(weight_path_tmp,by_name=True)
 					if np.max(succ_vec) == succ_vec[0,int(epoch_num/epoch_save_num)]:
 						best_succ = succ_vec[0,int(epoch_num/epoch_save_num)]
 						best_succ_epoch = epoch_num
