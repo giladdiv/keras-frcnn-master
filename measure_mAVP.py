@@ -89,13 +89,13 @@ parser = OptionParser()
 
 parser.add_option("-p", "--path", dest="test_path", help="Path to test data.")
 parser.add_option("-n", "--num_rois", dest="num_rois",
-				help="Number of ROIs per iteration. Higher means more memory use.", default=128)
+				help="Number of ROIs per iteration. Higher means more memory use.", default=32)
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to read the metadata related to the training (generated when training).",
 				default="config.pickle")
 parser.add_option("-o", "--parser", dest="parser", help="Parser to use. One of simple or pascal_voc",
 				default="pascal_voc"),
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_pascal.pickle' )
+parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
 
 (options, args) = parser.parse_args()
 
@@ -117,12 +117,12 @@ with open(config_output_filename, 'r') as f_in:
 	C = pickle.load(f_in)
 
 ## define all the paths
-test_From_File = True
+test_From_File = False
 use_NN = True
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-weight_name = 'model_trip_real_only_aeroplane_best'
+weight_name = 'model_FC_weight_best'
 C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
 
 ## create txt files
@@ -134,7 +134,7 @@ try:
 	os.mkdir(eval_folder)
 except:
 	pass
-test_cls = ['aeroplane','bicycle','boat','bus','car','chair','diningtable','motorbike','sofa','train', 'tvmonitor','results']
+test_cls = ['aeroplane','bicycle','boat','bus','car','chair','diningtable','motorbike','sofa','train', 'tvmonitor']
 
 
 
@@ -191,10 +191,11 @@ class_to_color = {inv_class_mapping[v]: np.random.randint(0, 255, 3) for v in in
 C.num_rois = int(options.num_rois)
 T_view, T_bbox = {}, {}
 P = {}
+txt_files = {}
 st = time.time()
+txt_files['results'] = open(os.path.join(eval_folder, "results.txt"), 'w')
 ## if want to run the network
 if not(test_From_File):
-	txt_files = {}
 	for cls in test_cls:
 		txt_files[cls] = open(os.path.join(eval_folder, "{}.txt".format(cls)), 'w')
 
@@ -286,7 +287,7 @@ if not(test_From_File):
 
 					[P_cls, P_regr, P_view] = model_classifier_only.predict([P_rpn[2], ROIs])
 					inner_f = model_inner.predict([P_rpn[2], ROIs])
-					# oo = model_classifier_only.predict([F, ROIs])
+					# oo = model_classifier_only.predict([FFalse, ROIs])
 
 
 					for ii in range(R.shape[0]):
@@ -416,11 +417,11 @@ if not(test_From_File):
 					txt_files[key].write('{} {} {} {} {} {} {}\n'.format(file_name,int(x1*fx),int(y1*fy),int(x2*fx),int(y2*fy),new_probs[jk],new_azimuth[jk]))
 				all_dets.append(det)
 
-	for key in test_cls[:-1]:
+	for key in test_cls:
 		txt_files[key].close
 
 count ={}
-for cls_txt in test_cls[:-1]:
+for cls_txt in test_cls:
 # for cls_txt in ['aeroplane']:
 	count[cls_txt] = 0
 	with open(os.path.join(eval_folder,'{}.txt'.format(cls_txt)),'r') as f:
@@ -431,13 +432,12 @@ for cls_txt in test_cls[:-1]:
 		good_bbox = [x for x in test_imgs[ii]['bboxes'] if x['class'] == cls_txt]
 		count[cls_txt] = count[cls_txt] + len(good_bbox) - sum([x['difficult'] for x in good_bbox])
 
-	ii = 0
 	old_name =''
 	all_dets = [{'x1': int(text[0][1]), 'x2': int(text[0][3]), 'y1': int(text[0][2]), 'y2': int(text[0][4]),
 			   'class': cls_txt, 'prob': float(text[0][5]),
 			   'azimuth': int(text[0][6])}]
 
-	for ii in range(1,len(text)):
+	for ii in range(1,len(text)-1):
 		det = {'x1': int(text[ii][1]), 'x2': int(text[ii][3]), 'y1': int(text[ii][2]), 'y2': int(text[ii][4]),
 			   'class': cls_txt, 'prob': float(text[ii][5]),
 			   'azimuth': int(text[ii][6])}
@@ -470,7 +470,7 @@ for cls_txt in test_cls[:-1]:
 all_aps = []
 all_avps = []
 
-for key in test_cls[:-1]:
+for key in test_cls:
 # for key in ['aeroplane']:
 	idexs = sorted(range(len(P[key])), key=lambda x: P[key][x], reverse=True)
 	precision = np.zeros([1, len(idexs)])
@@ -496,25 +496,23 @@ for key in test_cls[:-1]:
 		recall_bbox[0,num_positive] = num_correct / count[key]
 		recall_view[0,num_positive] = num_correct_view / count[key]
 
-    ## my new ap calculation, based on Render4CNN
+	## my new ap calculation, based on Render4CNN
 	avp = VOCap(rec=recall_bbox,prec=accuracy)
 	ap = VOCap(rec=recall_bbox,prec=precision)
 
-    ## old ap calculation
+	## old ap calculation
 	# ap = average_precision_score(T_bbox[key], P[key])
 	# avp = average_precision_score(T_view[key], P[key])
 	print('{} AP: {}'.format(key, ap))
 	print('{} AVP: {}'.format(key, avp))
-	if not(test_From_File):
-		txt_files['results'].write('{} AP: {}\n'.format(key, ap))
-		txt_files['results'].write('{} AVP: {}\n'.format(key, avp))
+	txt_files['results'].write('{} AP: {}\n'.format(key, ap))
+	txt_files['results'].write('{} AVP: {}\n'.format(key, avp))
 	all_aps.append(ap)
 	all_avps.append(avp)
 print('mAP = {}'.format(np.mean(np.array(all_aps))))
 print('mVAP = {}'.format(np.mean(np.array(all_avps))))
-if not(test_From_File):
-	txt_files['results'].write('mAP = {}\n'.format(np.mean(np.array(all_aps))))
-	txt_files['results'].write('mVAP = {}\n'.format(np.mean(np.array(all_avps))))
-	txt_files['results'].close()	# print(T)
+txt_files['results'].write('mAP = {}\n'.format(np.mean(np.array(all_aps))))
+txt_files['results'].write('mVAP = {}\n'.format(np.mean(np.array(all_avps))))
+txt_files['results'].close()	# print(T)
 	# print(P)
 print('Elapsed time = {}'.format(time.time() - st))
