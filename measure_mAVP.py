@@ -258,7 +258,8 @@ if not(test_From_File):
 					im_file.append(trip_data[test_cls_NN][ii][jj])
 					ind.append(ii)
 				except:
-					print('no azimuth {}'.format(ii))
+					if jj == 0:
+						print('no azimuth {}'.format(ii))
 		data_gen_train = data_generators.get_anchor_gt(im_file, [], C, K.image_dim_ordering(), mode='test')
 		azimuth_dict = []
 		inner_NN = []
