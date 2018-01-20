@@ -8,7 +8,7 @@ import time
 from keras_frcnn import config
 import keras_frcnn.resnet_FC as nn
 from keras import backend as K
-from keras.layers import Input
+from keras.layers import Input,Lambda
 from keras.models import Model
 from keras_frcnn import roi_helpers
 from keras_frcnn import data_generators
@@ -16,6 +16,8 @@ import scipy.io as sio
 from sklearn.metrics import average_precision_score
 import copy
 from sklearn.neighbors.classification import KNeighborsClassifier
+import tensorflow as tf
+
 
 
 def discretize(ang, nPoses):
@@ -122,8 +124,9 @@ use_NN = True
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-weight_name = 'model_FC_weight_best'
-C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
+# weight_name = 'model_FC_weight_best'
+weight_name = 'model_trip_real_only_aeroplane_best'
+C.model_path = os.path.join(curr_path,'models4test/{}.hdf5'.format(weight_name))
 
 ## create txt files
 eval_folder = os.path.join(curr_path,'Evaluation')
@@ -216,18 +219,20 @@ if not(test_From_File):
 
 	# define the RPN, built on the base layers
 	num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
-	rpn_layers = nn.rpn(shared_layers, num_anchors)
+	rpn = nn.rpn(shared_layers, num_anchors)
 
-	classifier,inner = nn.classifier(feature_map_input, roi_input, C.num_rois, nb_classes=len(class_mapping))
+	classifier,inner = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(class_mapping))
 
-	model_rpn = Model(img_input, rpn_layers)
-	model_classifier_only = Model([feature_map_input, roi_input], classifier)
+	inner = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(inner)
 
-	model_classifier = Model([feature_map_input, roi_input], classifier)
-	model_inner = Model([feature_map_input, roi_input], inner)
+	model_rpn = Model(img_input, rpn[:2])
+
+	model_classifier = Model([img_input, roi_input], classifier)
+	model_inner = Model([img_input, roi_input], inner)
 
 	model_rpn.load_weights(C.model_path, by_name=True)
 	model_classifier.load_weights(C.model_path, by_name=True)
+	model_inner.load_weights(C.model_path, by_name=True)
 
 	model_rpn.compile(optimizer='sgd', loss='mse')
 	model_classifier.compile(optimizer='sgd', loss='mse')
@@ -248,16 +253,19 @@ if not(test_From_File):
 		im_file = []
 		ind = []
 		for ii in range(360):
-			try:
-				im_file.append(trip_data[test_cls_NN][ii][0])
-				ind.append(ii)
-			except:
-				print('no azimuth {}'.format(ii))
+			for jj in range(3):
+				try:
+					im_file.append(trip_data[test_cls_NN][ii][jj])
+					ind.append(ii)
+				except:
+					print('no azimuth {}'.format(ii))
 		data_gen_train = data_generators.get_anchor_gt(im_file, [], C, K.image_dim_ordering(), mode='test')
 		azimuth_dict = []
 		inner_NN = []
-		for tt in ind:
+		for tt in range(len(ind)):
 			try:
+				if tt%100 == 0:
+					print ('worked on {}/{}'.format(tt,len(ind)))
 				# print ('im num {}'.format(good_img))
 				X, Y, img_data = next(data_gen_train)
 
@@ -285,17 +293,17 @@ if not(test_From_File):
 						ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
 						ROIs = ROIs_padded
 
-					[P_cls, P_regr, P_view] = model_classifier_only.predict([P_rpn[2], ROIs])
-					inner_f = model_inner.predict([P_rpn[2], ROIs])
-					# oo = model_classifier_only.predict([FFalse, ROIs])
+					[P_cls, P_regr, P_view] = model_classifier.predict([X, ROIs])
+					inner_f = model_inner.predict([X, ROIs])
+					# oo = model_classifier_only.predict([F, ROIs])
 
 
-					for ii in range(R.shape[0]):
+					for ii in range(len(sel_samples)):
 
 						if np.max(P_cls[0, ii, :]) < bbox_threshold_orig or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
 							continue
 
-						## use gt class1
+						## use gt class
 						cls_num = gt_cls_num
 
 						cls_name = inv_class_mapping[cls_num]
@@ -335,7 +343,7 @@ if not(test_From_File):
 			X = np.transpose(X, (0, 2, 3, 1))
 
 		# get the feature maps and output from the RPN
-		[Y1, Y2, F] = model_rpn.predict(X)
+		[Y1, Y2] = model_rpn.predict(X)
 
 		R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
 
@@ -363,9 +371,9 @@ if not(test_From_File):
 				ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
 				ROIs = ROIs_padded
 
-			[P_cls, P_regr,P_view] = model_classifier_only.predict([F, ROIs])
+			[P_cls, P_regr,P_view] = model_classifier.predict([X, ROIs])
 			if use_NN:
-				inner_out = model_inner.predict([F, ROIs])
+				inner_out = model_inner.predict([X, ROIs])
 
 			for ii in range(P_cls.shape[1]):
 
