@@ -120,13 +120,13 @@ with open(config_output_filename, 'r') as f_in:
 
 ## define all the paths
 test_From_File = False
-use_NN = True
+use_NN = False
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-# weight_name = 'model_FC_weight_best'
-weight_name = 'model_trip_real_only_aeroplane_best'
-C.model_path = os.path.join(curr_path,'models4test/{}.hdf5'.format(weight_name))
+weight_name = 'model_FC_weight_leaky_best'
+# weight_name = 'model_trip_real_only_aeroplane_best'
+C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
 
 ## create txt files
 eval_folder = os.path.join(curr_path,'Evaluation')
@@ -221,14 +221,14 @@ if not(test_From_File):
 	num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 	rpn = nn.rpn(shared_layers, num_anchors)
 
-	classifier,inner = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(class_mapping))
+	classifier,inner = nn.classifier(feature_map_input, roi_input, C.num_rois, nb_classes=len(class_mapping))
 
 	inner = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(inner)
 
-	model_rpn = Model(img_input, rpn[:2])
+	model_rpn = Model(img_input, rpn)
 
-	model_classifier = Model([img_input, roi_input], classifier)
-	model_inner = Model([img_input, roi_input], inner)
+	model_classifier = Model([feature_map_input, roi_input], classifier)
+	model_inner = Model([feature_map_input, roi_input], inner)
 
 	model_rpn.load_weights(C.model_path, by_name=True)
 	model_classifier.load_weights(C.model_path, by_name=True)
@@ -294,8 +294,8 @@ if not(test_From_File):
 						ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
 						ROIs = ROIs_padded
 
-					[P_cls, P_regr, P_view] = model_classifier.predict([X, ROIs])
-					inner_f = model_inner.predict([X, ROIs])
+					[P_cls, P_regr, P_view] = model_classifier.predict([F, ROIs])
+					inner_f = model_inner.predict([F, ROIs])
 					# oo = model_classifier_only.predict([F, ROIs])
 
 
@@ -344,7 +344,7 @@ if not(test_From_File):
 			X = np.transpose(X, (0, 2, 3, 1))
 
 		# get the feature maps and output from the RPN
-		[Y1, Y2] = model_rpn.predict(X)
+		[Y1, Y2,F] = model_rpn.predict(X)
 
 		R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
 
@@ -372,9 +372,9 @@ if not(test_From_File):
 				ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
 				ROIs = ROIs_padded
 
-			[P_cls, P_regr,P_view] = model_classifier.predict([X, ROIs])
+			[P_cls, P_regr,P_view] = model_classifier.predict([F ,ROIs])
 			if use_NN:
-				inner_out = model_inner.predict([X, ROIs])
+				inner_out = model_inner.predict([F, ROIs])
 
 			for ii in range(P_cls.shape[1]):
 
@@ -427,7 +427,7 @@ if not(test_From_File):
 				all_dets.append(det)
 
 	for key in test_cls:
-		txt_files[key].close
+		txt_files[key].close()
 
 count ={}
 for cls_txt in test_cls:
