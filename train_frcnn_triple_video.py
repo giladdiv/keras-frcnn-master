@@ -27,6 +27,7 @@ import copy
 from test_view_func import *
 from test_view_func_NN import *
 from operator import  itemgetter
+import glob
 #
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -404,24 +405,21 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 
 ## video loading
-vid_classes = ['aeroplane','car','motorbike','bus','boat','chair']
-frame_dist = [300,20,20,50,20,20]
+vid_classes = ['aeroplane','car','motorbike','bus','boat','chair','bicycle','sofa','tvmonitor']
+frame_dist = [300,20,20,50,20,100,100,100,100]
 start_frame = 0
 vid,end_frame,dist_frame = {},{},{}
 for ii,vid_class in enumerate(vid_classes):
-	dist_frame[vid_class] = frame_dist[ii]
-	for jj in range(10):
-		try:
-			video_filename = os.path.join(base_path, 'video/{}{}.mp4'.format(vid_class,jj))
-			if jj == 0:
-				vid[vid_class] = [imageio.get_reader(video_filename, 'ffmpeg')]
-				end_frame[vid_class] = [vid[vid_class][jj]._meta['nframes'] - 100]
-			else:
-				vid[vid_class].append(imageio.get_reader(video_filename, 'ffmpeg'))
-				end_frame[vid_class].append(vid[vid_class][jj]._meta['nframes'] - 100)
-		except:
-			break
-
+	for jj,video_filename in enumerate(sorted(glob.glob(os.path.join(base_path,'video/'+vid_class+'*')))):
+		name_parts = os.path.splitext(os.path.basename(video_filename))[0].split('_')
+		if jj == 0:
+			vid[vid_class] = [imageio.get_reader(video_filename, 'ffmpeg')]
+			end_frame[vid_class] = [vid[vid_class][jj]._meta['nframes'] - 30]
+			dist_frame[vid_class] = [name_parts[1]]
+		else:
+			vid[vid_class].append(imageio.get_reader(video_filename, 'ffmpeg'))
+			end_frame[vid_class].append(vid[vid_class][jj]._meta['nframes'] - 30)
+			dist_frame[vid_class].append(name_parts[1])
 model_rpn,model_classifier,model_all = build_models(weight_path=weight_path_init,init_models=True)
 # view_only_layers= [i for i,x in enumerate(model_classifier.layers) if 'view' in x.name]
 # jj = 140
@@ -451,7 +449,7 @@ countNum = 0
 MAP = 0
 best_succ = 0
 best_succ_epoch = 0
-epoch_save_num = 10
+epoch_save_num = 5
 succ_vec= np.zeros([1,int(np.ceil(float(num_epochs)/float(epoch_save_num)))])
 
 losses = np.zeros((epoch_length, 6))
@@ -730,15 +728,13 @@ for epoch_num in range(num_epochs):
 				choose_img = True
 				while choose_img:
 					try:
-						# trip_cls = 'chair'
-						# trip_idx = 0
 						trip_cls = random.choice(vid_classes)
-						cls_input = class_mapping[trip_cls]
 						trip_idx = np.random.randint(len(vid[trip_cls]))
+						cls_input = class_mapping[trip_cls]
 						num = start_frame + np.random.randint(0, end_frame[trip_cls][trip_idx] - start_frame)
 						img_ref = vid[trip_cls][trip_idx].get_data(num)
 						img_dp = vid[trip_cls][trip_idx].get_data(num + 1)
-						img_dm = vid[trip_cls][trip_idx].get_data(num + dist_frame[trip_cls])
+						img_dm = vid[trip_cls][trip_idx].get_data(num + int(dist_frame[trip_cls][trip_idx]))
 						## dispaly images
 						# im_r = Image.fromarray(img_R.astype('uint8'), 'RGB')
 						# im_r.show()
@@ -798,7 +794,7 @@ for epoch_num in range(num_epochs):
 					# print('\n')
 					# print('az before {} \naz after{}'.format(out_before, out_after))
 
-					print('\n')
+					# print('\n')
 					print('class {}'.format(cls_input))
 					print('loss before {} \nloss after{}'.format(np.mean(loss_before,axis=1),np.mean(loss_after,axis=1)))
 				elif iter_num%10 == 0:
