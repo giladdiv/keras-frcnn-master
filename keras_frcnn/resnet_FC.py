@@ -240,11 +240,11 @@ def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable_cls
     out1,fc = view_layers(out_roi_pool, input_shape=input_shape, trainable=trainable_view)
     fc = TimeDistributed(Flatten())(fc)
     ##use FC
-    out1 = TimeDistributed(Dense(1024, activation='linear', kernel_initializer='glorot_normal',trainable=True), name='dense_fc1024_view_{}'.format(nb_classes))(fc)
+    out1 = TimeDistributed(Dense(1024, activation='relu', kernel_initializer='glorot_normal',trainable=True), name='dense_fc1024_view_{}'.format(nb_classes))(fc)
     # out1 = TimeDistributed(Dense(1024, activation='relu', kernel_initializer='glorot_normal',trainable=True), name='dense_fc1024_view1_{}'.format(nb_classes))(out1)
     ##dont use FC
     # out1 = TimeDistributed(Flatten())(out1)
-    out1 = TimeDistributed(LeakyReLU())(out1)
+    # out1 = TimeDistributed(LeakyReLU())(out1)
 
 
 

@@ -42,9 +42,10 @@ parser.add_option("--output_weight_path", dest="output_weight_path", help="Outpu
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 # parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='./syn_data.pickle' )
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
+# parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
+parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/syn_data.pickle' )
 
-data_type = 'real'
+data_type = 'syn'
 
 (options, args) = parser.parse_args()
 
@@ -146,7 +147,7 @@ shared_layers = nn.nn_base(img_input, trainable=False)
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 rpn = nn.rpn(shared_layers, num_anchors)
 
-classifier,_ = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count),trainable_cls=True,trainable_view=True)
+classifier,_ = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count),trainable_cls=False,trainable_view=False)
 
 model_rpn = Model(img_input, rpn[:2])
 model_classifier = Model([img_input, roi_input], classifier)

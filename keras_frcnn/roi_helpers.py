@@ -606,7 +606,7 @@ def overlap_with_gt(boxes, probs,azimuth,gt_bbox,ratio=1, overlap_thresh=0.9, ma
 		return boxes, probs
 
 
-def non_max_suppression_fast(boxes, probs,azimuth=0, overlap_thresh=0.9, max_boxes=300,use_az = False):
+def non_max_suppression_fast(boxes, probs,azimuth=0,az_total=0, overlap_thresh=0.9, max_boxes=300,use_az = False,use_total = False):
 	# code used from here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
 	# if there are no boxes, return an empty list
 	if len(boxes) == 0:
@@ -673,7 +673,14 @@ def non_max_suppression_fast(boxes, probs,azimuth=0, overlap_thresh=0.9, max_box
 	# return only the bounding boxes that were picked using the integer data type
 	boxes = boxes[pick].astype("int")
 	probs = probs[pick]
-	if use_az:
+	if use_az and use_total:
+		az_count = []
+		az_tot = np.empty((0,360))
+		for az_id in idx_az:
+			az_count.append(np.argmax(np.bincount(azimuth[az_id])))
+			az_tot =np.append(az_tot,[np.sum(az_total[az_id,:],axis=0)],axis=0)
+		return boxes, probs, az_count,az_tot
+	elif use_az and not(use_total):
 		az_count = []
 		for az_id in idx_az:
 			az_count.append(np.argmax(np.bincount(azimuth[az_id])))

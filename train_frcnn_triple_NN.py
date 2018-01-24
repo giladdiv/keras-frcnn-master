@@ -292,7 +292,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 1
-weight_path_init = os.path.join(base_path, 'models/model_trip_real_only_aeroplane_best.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_trip_real_best.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
