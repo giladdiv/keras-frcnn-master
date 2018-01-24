@@ -10,7 +10,7 @@ import os
 from keras.losses import mean_squared_error
 from keras import backend as K
 from keras.optimizers import Adam, SGD, RMSprop
-from keras.layers import Input,Lambda,Flatten,Reshape,Activation
+from keras.layers import Input,Lambda,Flatten,Reshape,Activation,Concatenate
 from keras.models import Model
 from keras_frcnn import config, data_generators
 from keras_frcnn import losses as losses
@@ -49,10 +49,16 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_trip_randselect_1by1.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_tripmix.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='keras_frcnn/train_data_Wflip_pascal.pickle' )
+
+data_type = 'real'
+if data_type == 'real':
+	parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
+else:
+	parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",
+					  default='pickle_data/syn_by_obj_data.pickle')
 
 (options, args) = parser.parse_args()
 
@@ -80,6 +86,16 @@ def mat_lambda_output_shape(shapes):
 	shape1 = shapes
 	return(shape1[0],last_layer[0],data_len)
 
+def cosine_distance(vects):
+	x, y = vects
+	# x = tf.Print(x,[tf.shape(x)])
+	dis = K.sum(x*y,axis=2)
+	return K.reshape(dis,shape=(-1,32,1))
+
+
+def cosine_dist_output_shape(shapes):
+    shape1, shape2 = shapes
+    return (shape1[0],shape1[1],1)
 
 
 def create_mat_flip():
@@ -181,6 +197,7 @@ else:
 # pass the settings from the command line, and persist them in the config object
 draw_flag = False
 C = config.Config()
+C.num_classes = 21
 C.num_rois = int(options.num_rois)
 C.use_horizontal_flips = bool(options.horizontal_flips)
 C.use_vertical_flips = bool(options.vertical_flips)
@@ -189,7 +206,7 @@ C.rot_90 = bool(options.rot_90)
 C.model_path = options.output_weight_path
 temp_ind = C.model_path.index(".hdf5")
 C.model_path_epoch =C.model_path[:temp_ind]+'_epoch'+C.model_path[temp_ind:]
-
+C.weight_name = os.path.splitext(os.path.basename(options.output_weight_path))[0]
 
 if options.input_weight_path:
 	C.base_net_weights = options.input_weight_path
@@ -283,20 +300,19 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'model_trip_randselect_1by1_epoch_60.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_FC_weight_best.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
-weight_path_tmp = os.path.join(base_path, 'model_frcnn_siam_tmp.hdf5')
-cls_input = 7
+weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
 
 def build_models(weight_path,init_models = False,train_view_only = False,create_siam = False):
 	##
 	if train_view_only:
 		trainable_cls = False
-		trainable_view = True
+		trainable_view =  False
 	else:
 		trainable_cls = False
-		trainable_view = True
+		trainable_view =  False
 	# define the base network (resnet here, can be VGG, Inception, etc)
 	shared_layers = nn.nn_base(img_input, trainable= trainable_cls)
 
@@ -306,7 +322,11 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 
 	# classifier = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count), trainable_cls=trainable_cls,trainable_view=trainable_view)
-	classifier,iner_layer = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count), trainable_cls=trainable_cls,trainable_view=trainable_view)
+	classifier,inner_layer = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=C.num_classes, trainable_cls=trainable_cls,trainable_view=trainable_view)
+
+
+	# L2 normalization for inner layer
+	inner_layer = Lambda(lambda x: tf.nn.l2_normalize(x,dim =2))(inner_layer)
 
 	model_rpn = Model(img_input, rpn[:2])
 
@@ -335,7 +355,7 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 	model_rpn.compile(optimizer=optimizer, loss=[losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors)])
 	##no weights
-	model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(len(classes_count)-1),losses.class_loss_view(len(classes_count),roi_num=C.num_rois)], metrics=['accuracy'])
+	model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(C.num_classes-1),losses.class_loss_view(C.num_classes,roi_num=C.num_rois)], metrics=['accuracy'])
 	## with weights
 	# model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(len(classes_count)-1),losses.class_loss_view_weight(len(classes_count),roi_num=C.num_rois)], metrics=['accuracy'])
 
@@ -343,31 +363,42 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 	if create_siam:
 		model_view_only = Model([img_input, roi_input], classifier[2])
-		model_iner = Model([img_input, roi_input],iner_layer)
+		model_inner = Model([img_input, roi_input],inner_layer)
 		## use the feature map after rpn,train only the view module
-		view_ref = model_iner([img_input_ref,roi_input_ref])
-		view_dp = model_iner([img_input_dp,roi_input_dp])
-		view_dm = model_iner([img_input_dm, roi_input_dm])
+		view_ref = model_inner([img_input_ref,roi_input_ref])
+		view_dp = model_inner([img_input_dp,roi_input_dp])
+		view_dm = model_inner([img_input_dm, roi_input_dm])
 
 
-		distance_dp = Lambda(euclidean_distance,
-				output_shape=eucl_dist_output_shape)([view_dp, view_ref])
+		# distance_dp = Lambda(euclidean_distance,
+		# 		output_shape=eucl_dist_output_shape)([view_dp, view_ref])
+		#
+		# distance_dm = Lambda(euclidean_distance,
+		# 		output_shape=eucl_dist_output_shape)([view_dm, view_ref])
+		# distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
+		# distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
+		# trip = Lambda(trip_layer, output_shape=[1, 2], name='concat_layer')([distance_dp, distance_dm]) # should be comperd to [0,1] in MSE
+		# model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
+		# model_trip.compile(loss='mse', optimizer=optimizer_trip)
 
-		distance_dm = Lambda(euclidean_distance,
-				output_shape=eucl_dist_output_shape)([view_dm, view_ref])
+		## second version for trip distance - cosine distance with softmax
+		cos_dp = Lambda(cosine_distance,
+						output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
 
+		cos_dm = Lambda(cosine_distance,
+						output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
+		# soft_param = K.ones([1,1])*2
+		soft_param = tf.Variable(initial_value=[5.])
 
-		distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
-		distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
-		# dp = K.softmax(distance_dp)
-		# dm = K.softmax(distance_dm)
-        #
-		trip =Lambda(trip_layer,output_shape=[1,2],name = 'concat_layer')([distance_dp,distance_dm]) # should be comperd to [0,1] in MSE
-		# tr
-		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
-		model_view_only.compile(optimizer='sgd',loss=losses.class_loss_view(len(classes_count),roi_num=C.num_rois),metrics=['accuracy'])
-		model_trip.compile(loss='mse', optimizer=optimizer_trip)
-		return model_rpn, model_classifier, model_all, model_iner, model_trip
+		# soft_param = K.repeat(soft_param,2)
+		dist = Concatenate(axis=2)([cos_dm, cos_dp])
+		dist = Lambda(lambda x: x * soft_param)(dist)
+		trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
+		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm], trip)
+		model_trip.layers[10].trainable_weights.extend([soft_param])
+		model_trip.compile(optimizer=optimizer_trip, loss='categorical_crossentropy')
+
+		return model_rpn, model_classifier, model_all, model_inner, model_trip
 
 	else:
 		return model_rpn, model_classifier, model_all
@@ -397,7 +428,7 @@ model_rpn,model_classifier,model_all = build_models(weight_path=weight_path_init
 # 		jj+=1
 
 model_all.save_weights(weight_path_tmp)
-_,_,_,model_iner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
+_,_,_,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
 ## get layers
 # test_view_func(C, model_rpn, model_classifier)
 # classifier_not_trainable_layers = [i for i,x in enumerate(model_classifier.layers) if x.trainable == False]
@@ -411,7 +442,7 @@ countNum = 0
 MAP = 0
 best_succ = 0
 best_succ_epoch = 0
-epoch_save_num = 10
+epoch_save_num = 5
 succ_vec= np.zeros([1,int(np.ceil(float(num_epochs)/float(epoch_save_num)))])
 
 losses = np.zeros((epoch_length, 6))
@@ -424,8 +455,8 @@ best_loss = np.Inf
 class_mapping_inv = {v: k for k, v in class_mapping.items()}
 print('Starting training')
 
-def generate_data_trip(img_data, C, backend):
-	X, Y, img_data = data_generators.get_anchor_gt_trip(img_data, C, backend)
+def generate_data_trip(img_data, C, backend,draw_flag = False):
+	X, Y, img_data= data_generators.get_anchor_gt_trip(img_data, C, backend)
 
 	P_rpn = model_rpn.predict_on_batch(X)
 
@@ -443,6 +474,14 @@ def generate_data_trip(img_data, C, backend):
 		else:
 			selected_pos_samples = np.random.choice(pos_samples[0], C.num_rois, replace=False).tolist()
 	R,Y_view = roi_helpers.prep_flip(X2[:,selected_pos_samples,:],Y_view[:,selected_pos_samples,:],C)
+
+	if draw_flag:
+		Im = cv2.imread(img_data['filepath'])
+		key = img_data['bboxes'][0]['class']
+		azimuth = img_data['bboxes'][0]['azimuth']
+		bbox = np.array([[img_data['bboxes'][0]['x1'],img_data['bboxes'][0]['y1'],img_data['bboxes'][0]['x2'],img_data['bboxes'][0]['y2']]])
+		img = img_helpers.draw_bbox(Im, bbox, 0, [azimuth], 1, class_mapping_inv, key)
+		img_helpers.display_image(img,0)
 	return X,R,Y_view
 
 
@@ -462,7 +501,7 @@ def calc_roi_siam(Im,R,X,title_id):
 	probs = {}
 	azimuths = {}
 	idx =[]
-	bbox_threshold = 0.8
+	bbox_threshold = 0.7
 	for jk in range(R.shape[0] // C.num_rois + 1):
 		ROIs = np.expand_dims(R[C.num_rois * jk:C.num_rois * (jk + 1), :], axis=0)
 		if ROIs.shape[1] == 0:
@@ -521,10 +560,12 @@ def calc_roi_siam(Im,R,X,title_id):
 
 	return bbox,prob,azimuth,idx
 
+func_k = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm],[model_trip.layers[10].input,model_trip.layers[10].output])
+
 for epoch_num in range(num_epochs):
 
 	progbar = generic_utils.Progbar(epoch_length)
-	print('Epoch {}/{}'.format(epoch_num + 1, num_epochs))
+	print('Epoch {}/{}'.format(epoch_num, num_epochs))
 
 	while True:
 		# t_start = time.time()
@@ -643,6 +684,7 @@ for epoch_num in range(num_epochs):
 				## choose trip
 				rand_cls =trip_cls[np.random.randint(len(trip_cls))]
 				# rand_cls = 'aeroplane'
+				cls_input = class_mapping[rand_cls]
 
 				## old triple choose
 				# len_data = len(trip_data[rand_cls])
@@ -655,19 +697,39 @@ for epoch_num in range(num_epochs):
 
 				check_flag = True
 				small_bw = 5
-				big_bw = 20
-				while check_flag:
-					try:
-						az = np.random.randint(0,359)
-						az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
-						ind_normal = np.random.normal(0,20,1)
-						az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal)))%360
-						data_ref = trip_data[rand_cls][az][np.random.randint(0,len(trip_data[rand_cls][az])-1)]
-						data_dp = trip_data[rand_cls][az_dp][np.random.randint(0,len(trip_data[rand_cls][az_dp])-1)]
-						data_dm = trip_data[rand_cls][az_dm][np.random.randint(0,len(trip_data[rand_cls][az_dm])-1)]
-						check_flag = False
-					except:
-						check_flag = True
+				if epoch_num < 20:
+					big_bw = 60
+				else:
+					big_bw = 15
+				if data_type == 'real':
+					while check_flag:
+						try:
+							az = np.random.randint(0,359)
+							az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
+							ind_normal = np.random.normal(0,20,1)
+							az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal)))%360
+							data_ref = trip_data[rand_cls][az][np.random.randint(0,len(trip_data[rand_cls][az]))]
+							data_dp = trip_data[rand_cls][az_dp][np.random.randint(0,len(trip_data[rand_cls][az_dp]))]
+							dm_idx = np.random.randint(0,len(trip_data[rand_cls][az_dm]))
+							data_dm = trip_data[rand_cls][az_dm][dm_idx]
+							# data_dm2 = trip_data[rand_cls][az_dm][(dm_idx+1)%len(trip_data[rand_cls][az_dm])]
+							check_flag = False
+						except:
+							check_flag = True
+				else:
+					while check_flag:
+						try:
+							folder =np.random.randint(1,len(trip_data[rand_cls])+1)
+							az = np.random.randint(0,359)
+							az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
+							ind_normal = np.random.normal(0,20,1)
+							az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal)))%360
+							data_ref = trip_data[rand_cls][folder][az][np.random.randint(0,len(trip_data[rand_cls][folder][az]))]
+							data_dp = trip_data[rand_cls][folder][az_dp][np.random.randint(0,len(trip_data[rand_cls][folder][az_dp]))]
+							data_dm = trip_data[rand_cls][folder][az_dm][np.random.randint(0,len(trip_data[rand_cls][folder][az_dm]))]
+							check_flag = False
+						except:
+							check_flag = True
 				## load 3 images with
 				X_ref,R_ref,Y_ref = generate_data_trip(data_ref,C,K.image_dim_ordering())
 				X_dm,R_dm,Y_dm = generate_data_trip(data_dm,C,K.image_dim_ordering())
@@ -682,14 +744,22 @@ for epoch_num in range(num_epochs):
 				# im_l.show()
 
 				model_classifier.save_weights(weight_path_tmp)
-				model_iner.load_weights(weight_path_tmp,by_name = True)
+				model_inner.load_weights(weight_path_tmp,by_name = True)
 				# kfun = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm],[model_trip.layers[11].input[0],model_trip.layers[11].input[1],model_trip.layers[11].output])
 				# kfun([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
-				loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
-				model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm],np.array([[[0,1]]]))
-				loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
 
-				model_iner.save_weights(weight_path_tmp)
+				if iter_num % 5*C.siam_iter_frequancy == 0:
+					loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
+					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
+					loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
+					print('\n')
+					print('class {} loss before {} loss after{}'.format(rand_cls, np.mean(loss_before, axis=1),
+																		np.mean(loss_after, axis=1)))
+				else:
+					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
+
+
+				model_inner.save_weights(weight_path_tmp)
 				model_classifier.load_weights(weight_path_tmp,by_name = True)
 
 				# loss_before = model_trip.predict([X_ref,R_ref,X_dp,R_dp,X_dm,R_dm])
@@ -703,38 +773,6 @@ for epoch_num in range(num_epochs):
 				# loss_after = model_siam.predict([X_l, R_l_idx, X_r, R_r_idx])
 				# view_out_after = model_classifier.predict([X_l,R_l_idx])[2]
 				# out_after = np.argmax(view_out_after[0, :len(idx_l), 360 * cls_input:360 * (cls_input + 1)], axis=1)
-
-				if iter_num % 5*C.siam_iter_frequancy == 0:
-					print('\n')
-					print('class {}'.format(rand_cls))
-					print('az before {} \naz after{}'.format(loss_before,loss_after))
-
-				## calc siam only on the view module
-				# if len(idx_l)>6:
-				# 	model_classifier.save_weights(weight_path_tmp)
-				# 	model_view_only.load_weights(weight_path_tmp,by_name=True)
-				# 	az_siam = np.argmax(np.bincount(azimuth_l))
-				# 	Y_siam = roi_helpers.az2vec(az=az_siam,class_num=cls_input,roi_num=C.num_rois,class_mapping = class_mapping)
-                #
-				# 	## train on video image only the view model
-				# 	view_out_before = model_classifier.predict([X_l,R_l_idx])[2]
-				# 	out_before = np.argmax(view_out_before[0, :len(idx_l), 360 * cls_input:360 * (cls_input + 1)], axis=1)
-				# 	F = model_rpn_features.predict(X_l)
-				# 	# just_view_out_before = model_view_only.predict([F,R_l_idx])
-				# 	# out_before_only = np.argmax(just_view_out_before[0, :len(idx_l), 360 * cls_input:360 * (cls_input + 1)], axis=1)
-                #
-				# 	model_view_only.train_on_batch([F,R_l_idx],Y_siam)
-                #
-				# 	model_view_only.save_weights(weight_path_tmp)
-                #
-                #
-				# 	model_classifier.load_weights(weight_path_tmp,by_name=True)
-                #
-				# 	view_out_after = model_classifier.predict([X_l,R_l_idx])[2]
-				# 	out_after = np.argmax(view_out_after[0, :len(idx_l), 360 * cls_input:360 * (cls_input + 1)], axis=1)
-				# 	print('\n')
-				# 	print('az before {} \naz after {}'.format(out_before,out_after))
-
 
 			if iter_num == epoch_length:
 				loss_rpn_cls = np.mean(losses[:, 0])
