@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_trip_real.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_trip_real_relu.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -292,7 +292,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 1
-weight_path_init = os.path.join(base_path, 'models/model_trip_real_best.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_FC_init.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -380,9 +380,15 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 		cos_dm = Lambda(cosine_distance,
 						output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
+		# soft_param = K.ones([1,1])*2
+		soft_param = tf.Variable(initial_value=[5.])
+
+		# soft_param = K.repeat(soft_param,2)
 		dist = Concatenate(axis=2)([cos_dm, cos_dp])
+		dist = Lambda(lambda x: x * soft_param)(dist)
 		trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
 		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm], trip)
+		model_trip.layers[10].trainable_weights.extend([soft_param])
 		model_trip.compile(optimizer=optimizer_trip, loss='categorical_crossentropy')
 
 		return model_rpn, model_classifier, model_all, model_inner, model_trip
@@ -417,9 +423,17 @@ model_rpn,model_classifier,model_all = build_models(weight_path=weight_path_init
 model_all.save_weights(weight_path_tmp)
 _,_,_,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
 ## get layers
-test_view_func_NN(model_classifier,model_rpn,model_inner,C)
+# test_view_func_NN(model_classifier,model_rpn,model_inner,C)
 # classifier_not_trainable_layers = [i for i,x in enumerate(model_classifier.layers) if x.trainable == False]
 
+global im_id
+im_id = 0
+
+
+def add_id():
+	global im_id
+	im_id += 1
+	return im_id
 
 epoch_length = 1000
 num_epochs = int(options.num_epochs)
@@ -546,6 +560,8 @@ def calc_roi_siam(Im,R,X,title_id):
 
 	return bbox,prob,azimuth,idx
 
+func_k = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm],[model_trip.layers[10].input,model_trip.layers[10].output])
+
 for epoch_num in range(num_epochs):
 
 	# progbar = generic_utils.Progbar(epoch_length)
@@ -569,13 +585,7 @@ for epoch_num in range(num_epochs):
 				# print('iter time {}'.format(time.time()-t_start))
 
 			## siam block
-			global im_id
-			im_id = 0
 
-			def add_id():
-				global im_id
-				im_id+=1
-				return im_id
 
 
 			trip_flag = True
@@ -598,10 +608,10 @@ for epoch_num in range(num_epochs):
 
 				check_flag = True
 				small_bw = 5
-				if epoch_num < 40:
+				if epoch_num < 20:
 					big_bw = 60
 				else:
-					big_bw = 20
+					big_bw = 15
 				if data_type == 'real':
 					while check_flag:
 						try:
@@ -613,7 +623,7 @@ for epoch_num in range(num_epochs):
 							data_dp = trip_data[rand_cls][az_dp][np.random.randint(0,len(trip_data[rand_cls][az_dp]))]
 							dm_idx = np.random.randint(0,len(trip_data[rand_cls][az_dm]))
 							data_dm = trip_data[rand_cls][az_dm][dm_idx]
-							data_dm2 = trip_data[rand_cls][az_dm][(dm_idx+1)%len(trip_data[rand_cls][az_dm])]
+							# data_dm2 = trip_data[rand_cls][az_dm][(dm_idx+1)%len(trip_data[rand_cls][az_dm])]
 							check_flag = False
 						except:
 							check_flag = True
@@ -635,7 +645,7 @@ for epoch_num in range(num_epochs):
 				X_ref,R_ref,Y_ref = generate_data_trip(data_ref,C,K.image_dim_ordering())
 				X_dp,R_dp,Y_dp = generate_data_trip(data_dp,C,K.image_dim_ordering())
 				X_dm,R_dm,Y_dm = generate_data_trip(data_dm,C,K.image_dim_ordering())
-				X_dm2,R_dm2,Y_dm2 = generate_data_trip(data_dm2,C,K.image_dim_ordering())
+				# X_dm2,R_dm2,Y_dm2 = generate_data_trip(data_dm2,C,K.image_dim_ordering())
 				# cls_input = class_mapping[rand_cls]
 
 
@@ -660,7 +670,7 @@ for epoch_num in range(num_epochs):
 					# 	continue
 
 					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp,X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
-					model_trip.train_on_batch([X_dm, R_dm,X_dm2, R_dm2,X_ref, R_ref], np.array([np.tile([0,1],(32,1))]))
+					# model_trip.train_on_batch([X_dm, R_dm,X_dm2, R_dm2,X_ref, R_ref], np.array([np.tile([0,1],(32,1))]))
 
 					# model_inner.save_weights(weight_path_tmp)
 					# model_classifier.load_weights(weight_path_tmp, by_name=True)
@@ -677,7 +687,7 @@ for epoch_num in range(num_epochs):
 					# print('az before {} \naz after{}'.format(out_before, out_after))
 
 					# print('\n')
-					print('class {} loss1 before {} loss1 after{}'.format(rand_cls,np.mean(loss_before1,axis=1),np.mean(loss_after1,axis=1)))
+					print('class {} loss before {} loss after{}'.format(rand_cls,np.mean(loss_before1,axis=1),np.mean(loss_after1,axis=1)))
 					# print('class {} loss2 before {} loss2 after{}'.format(rand_cls,np.mean(loss_before2,axis=1),np.mean(loss_after2,axis=1)))
 					# print('class {} loss3 before {} loss3 after{}'.format(rand_cls,np.mean(loss_after2,axis=1),np.mean(loss_after3,axis=1)))
 
@@ -686,13 +696,15 @@ for epoch_num in range(num_epochs):
 					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm],
 											  np.array([np.tile([0, 1], (32, 1))]))
 
+					# model_trip.train_on_batch([X_dm, R_dm, X_dm2, R_dm2, X_ref, R_ref],
+					# 						  np.array([np.tile([0, 1], (32, 1))]))
 				iter_num += 1
 
 
 
 			if iter_num%100 == 0:
 				print('iter num {} in epoch {}'.format(iter_num,epoch_num))
-
+				print('softmax factor {}'.format(np.nanmax(func_k([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])[1]/func_k([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])[0])))
 
 			if iter_num == epoch_length:
 
