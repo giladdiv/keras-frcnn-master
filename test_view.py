@@ -15,7 +15,8 @@ from keras_frcnn import roi_helpers
 from PIL import Image
 import pylab
 import imageio
-
+import matplotlib.pyplot as plt
+import bottleneck as bn
 
 g_matlab_executable_path = '/usr/local/MATLAB/R2016b/bin/glnxa64/MATLAB'
 
@@ -44,6 +45,13 @@ config_output_filename = options.config_filename
 
 with open(config_output_filename, 'rb') as f_in:
 	C = pickle.load(f_in)
+
+def softmax(x):
+	"""Compute softmax values for each sets of scores in x."""
+	x = x- np.min(x)
+	e_x = np.exp(x - np.max(x))
+	return e_x / e_x.sum(axis=0)
+
 
 # filename ='/home/gilad/bar/real7.p'
 # video_filename = "/home/gilad/ssd/keras-frcnn-master/a.mp4"
@@ -186,6 +194,21 @@ all_imgs = []
 
 classes = {}
 
+def pred2bins(az_pred):
+    '''
+    find the bin for every quntization by sum
+    '''
+    sum_az = np.cumsum(az_pred)
+    pyr_bins = np.zeros([1,4])
+    vnum = [4, 8, 16, 24]
+    for ii in range(len(vnum)):
+        tmp_azimuth = np.concatenate(([0], np.linspace((360. / (vnum[ii] * 2)), 360. - (360. / (vnum[ii] * 2)), vnum[ii])),
+                                 axis=0)
+        sum_vec = np.diff([sum_az[i] for i in tmp_azimuth.astype(int)])
+        sum_vec[0] += sum_az[359] - sum_vec[-1]
+        pyr_bins[0,ii] = np.argmax(sum_vec) + 1 #becuse the bins starts at 1
+    return pyr_bins
+
 bbox_threshold = 0.7
 rgb = False
 #### open images from folder
@@ -214,22 +237,28 @@ rgb = False
 # 	# filepath = os.path.join(tmp_str, 'JPEGImages', string[1])
 # 	img = cv2.imread(filepath)
 
-
+def top_n_indexes(arr, n):
+	id = np.argsort(arr)[-n:]
+	val = arr[id]
+	return id,val
 
 ### open images from video
-obj_name = 'car'
-file_name = '{}5_30'.format(obj_name)
+visualize = True
+save_flag = False
+obj_name = 'bicycle'
+file_name = '{}1_200'.format(obj_name)
 video_filename = 'video/{}.mp4'.format(file_name)
 result_folder = 'results_imgs/{}'.format(file_name)
 if not(os.path.exists(result_folder)):
 	os.mkdir(result_folder)
 vid = imageio.get_reader(video_filename, 'ffmpeg')
 rgb = True
-single_obj = True
-start_frame = 1
+start_frame = 300
 end_frame = vid._meta['nframes'] - 30
-for num in range(start_frame ,end_frame):
+for num in range(start_frame ,end_frame,10):
+	# num =
 	img = vid.get_data(num)
+	# img = cv2.flip(vid.get_data(num),1)
 #
 
 	if img is None:
@@ -257,7 +286,8 @@ for num in range(start_frame ,end_frame):
 	bboxes = {}
 	probs = {}
 	azimuths ={}
-
+	prob = {}
+	az_total = {}
 	for jk in range(R.shape[0]//C.num_rois + 1):
 		ROIs = np.expand_dims(R[C.num_rois*jk:C.num_rois*(jk+1), :], axis=0)
 		if ROIs.shape[1] == 0:
@@ -280,7 +310,7 @@ for num in range(start_frame ,end_frame):
 				continue
 			cls_num = np.argmax(P_cls[0, ii, :])
 			cls_name = class_mapping[cls_num]
-			cls_view = P_view[0, ii, 360*cls_num:360*(cls_num+1)]
+			cls_view = softmax(P_view[0, ii, 360*cls_num:360*(cls_num+1)])
 			# cls_name_gt = old_cls[int(cls_gt)]
 			# if cls_name == cls_name_gt:
 			# 	print(np.argmax(cls_view,axis=0))
@@ -288,6 +318,8 @@ for num in range(start_frame ,end_frame):
 				bboxes[cls_name] = []
 				probs[cls_name] = []
 				azimuths[cls_name] = []
+				prob[cls_name] = []
+				az_total[cls_name] = np.zeros(360)
 
 			(x, y, w, h) = ROIs[0, ii, :]
 
@@ -303,7 +335,10 @@ for num in range(start_frame ,end_frame):
 			bboxes[cls_name].append([C.rpn_stride*x, C.rpn_stride*y, C.rpn_stride*(x+w), C.rpn_stride*(y+h)])
 			probs[cls_name].append(np.max(P_cls[0, ii, :]))
 			azimuths[cls_name].append(np.argmax(cls_view,axis=0))
-
+			prob[cls_name].append(cls_view)
+			ids,vals = top_n_indexes(cls_view,10)
+			for ind,val in zip(ids,vals):
+				az_total[cls_name][ind]+= val * np.max(P_cls[0, ii, :])
 
 	all_dets = []
 
@@ -311,9 +346,10 @@ for num in range(start_frame ,end_frame):
 		if not(key == obj_name):
 			continue
 		bbox = np.array(bboxes[key])
-		prob = np.array(probs[key])
+		prob_array = np.array(probs[key])
 		azimuth = np.array(azimuths[key])
-		new_boxes, new_probs,new_az = roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,overlap_thresh=0.25,use_az=True)
+		az_calc = np.argmax(np.array(az_total[key]))
+		new_boxes, new_probs,new_az = roi_helpers.non_max_suppression_fast(bbox,prob_array,azimuth,overlap_thresh=0.25,use_az=True)
 		for jk in range(new_boxes.shape[0]):
 			(x1, y1, x2, y2) = new_boxes[jk,:]
 
@@ -355,13 +391,36 @@ for num in range(start_frame ,end_frame):
 	# print('real az is {}'.format(az_gt))
 	# print('pred az is {}'.format(new_az[:]))
 	# print(all_dets)
-	visualize= False
-	save_flag = True
+
 	if visualize:
 		# img1 = img[:,:,(2,1,0)]
-		img1=img
-		im  = Image.fromarray(img1.astype('uint8'),'RGB')
-		im.show()
+		# img1=img
+		# im  = Image.fromarray(img1.astype('uint8'),'RGB')
+		# im.show()
+		prob1 = prob[obj_name][-2]
+		id,val =  top_n_indexes(prob1,5)
+		az_real = 0
+		fig = plt.figure()
+		plt.subplot(211)
+		plt.title('image {}'.format(num))
+		im = Image.fromarray(img.astype('uint8'), 'RGB')
+		# im.show()
+		plt.imshow(im)
+		# plt.interactive(True)False
+		plt.subplot(212)
+		true180 = (az_real + 180) % 360
+		plt.plot(az_real * np.ones([10, ]), np.linspace(0, prob1[az_real], 10), '-b', label='true azimuth')
+		plt.plot(true180 * np.ones([10, ]), np.linspace(0, prob1[true180], 10), '*b', label='180 from true azimuth')
+		plt.plot(new_az * np.ones([10, ]), np.linspace(0, prob1[new_az], 10), '-r', label='predict azimuth')
+		plt.plot(np.asarray(prob1), '-g')
+		# plt.legend()
+		plt.title('az_calc {} az pred {}'.format(az_calc,new_az))
+		# plt.title(
+		# 	'true %s,pred %s ,pred_lr %s error is %s and its %s' % (
+		# 	az_real, az_prob_orig, az_prob_lr, ang_err[0], status_name))
+		plt.show()
+
+
 	# cv2.imshow('img', img)
 	# cv2.waitKey(0)
 	if save_flag:
