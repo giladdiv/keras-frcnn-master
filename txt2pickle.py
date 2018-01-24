@@ -27,7 +27,7 @@ for file_name in os.listdir(ann_folder):
             except:
                 fail += 1
     print ('failed on {} images'.format(fail))
-with open('syn_data.pickle','w') as f:
+with open('pickle_data/syn_data.pickle','w') as f:
     pickle.dump(all_data,f)
-with open('syn_by_obj_data.pickle','w') as f:
+with open('pickle_data/syn_by_obj_data.pickle','w') as f:
     pickle.dump(data_by_obj,f)

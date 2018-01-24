@@ -259,6 +259,8 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 			bbox_threshold = bbox_threshold_orig
 			if not bbox_gt['class']==test_cls:
 				continue
+			if bbox_gt['class'] == test_cls and bbox_threshold == bbox_threshold_orig:
+				obj_num += 1
 			while no_bbox_flag and bbox_threshold > th_bbox:
 				cls_gt = bbox_gt['class']
 				az_gt = bbox_gt['azimuth']
@@ -270,8 +272,6 @@ def test_view_func_NN(model_classifier,model_rpn,model_inner,C):
 					probs = {}
 					azimuths ={}
 					inner_res = {}
-					if bbox_gt['class'] == test_cls and bbox_threshold == bbox_threshold_orig :
-						obj_num += 1
 						# print ('obj num {}'.format(obj_num))
 
 					for jk in range(R.shape[0]//C.num_rois + 1):

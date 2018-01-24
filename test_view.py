@@ -17,7 +17,7 @@ import pylab
 import imageio
 
 
-
+g_matlab_executable_path = '/usr/local/MATLAB/R2016b/bin/glnxa64/MATLAB'
 
 sys.setrecursionlimit(40000)
 
@@ -96,9 +96,10 @@ def format_img_size(img, C):
 	img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
 	return img, ratio	
 
-def format_img_channels(img, C):
+def format_img_channels(img, C,rgb = False):
 	""" formats the image channels based on config """
-	img = img[:, :, (2, 1, 0)]
+	if not(rgb):
+		img = img[:, :, (2, 1, 0)]
 	img = img.astype(np.float32)
 	img[:, :, 0] -= C.img_channel_mean[0]
 	img[:, :, 1] -= C.img_channel_mean[1]
@@ -108,10 +109,10 @@ def format_img_channels(img, C):
 	img = np.expand_dims(img, axis=0)
 	return img
 
-def format_img(img, C):
+def format_img(img, C ,rgb = False):
 	""" formats an image for model prediction based on config """
 	img, ratio = format_img_size(img, C)
-	img = format_img_channels(img, C)
+	img = format_img_channels(img, C,rgb)
 	return img, ratio
 
 # Method to transform the coordinates of the bounding box to its original size
@@ -185,16 +186,16 @@ all_imgs = []
 
 classes = {}
 
-bbox_threshold = 0.6
-
+bbox_threshold = 0.7
+rgb = False
 #### open images from folder
 
-for idx, img_name in enumerate(sorted(os.listdir(img_path))):
-	if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
-		continue
-	print(img_name)
-	filepath = os.path.join(img_path,img_name)
-	img = cv2.imread(filepath)
+# for idx, img_name in enumerate(sorted(os.listdir(img_path))):
+# 	if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
+# 		continue
+# 	print(img_name)
+# 	filepath = os.path.join(img_path,img_name)
+# 	img = cv2.imread(filepath)
 
 #### open images from file
 
@@ -216,10 +217,19 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 
 
 ### open images from video
-# vid = imageio.get_reader(video_filename, 'ffmpeg')
-# start_frame = 17675
-# for num in range(start_frame ,start_frame + 600):
-# 	img = vid.get_data(num)
+obj_name = 'car'
+file_name = '{}5_30'.format(obj_name)
+video_filename = 'video/{}.mp4'.format(file_name)
+result_folder = 'results_imgs/{}'.format(file_name)
+if not(os.path.exists(result_folder)):
+	os.mkdir(result_folder)
+vid = imageio.get_reader(video_filename, 'ffmpeg')
+rgb = True
+single_obj = True
+start_frame = 1
+end_frame = vid._meta['nframes'] - 30
+for num in range(start_frame ,end_frame):
+	img = vid.get_data(num)
 #
 
 	if img is None:
@@ -227,7 +237,9 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 		continue
 	else:
 		good_img += 1
-	X, ratio = format_img(img, C)
+	if good_img%50 == 0:
+		print ('created {}/{} images'.format(good_img,end_frame-start_frame))
+	X, ratio = format_img(img, C,rgb=rgb)
 
 	if K.image_dim_ordering() == 'tf':
 		X = np.transpose(X, (0, 2, 3, 1))
@@ -296,11 +308,12 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 	all_dets = []
 
 	for key in bboxes:
-		# if key == "aeroplane":
+		if not(key == obj_name):
+			continue
 		bbox = np.array(bboxes[key])
 		prob = np.array(probs[key])
 		azimuth = np.array(azimuths[key])
-		new_boxes, new_probs,new_az = roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,overlap_thresh=0.3,use_az=True)
+		new_boxes, new_probs,new_az = roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,overlap_thresh=0.25,use_az=True)
 		for jk in range(new_boxes.shape[0]):
 			(x1, y1, x2, y2) = new_boxes[jk,:]
 
@@ -342,18 +355,23 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 	# print('real az is {}'.format(az_gt))
 	# print('pred az is {}'.format(new_az[:]))
 	# print(all_dets)
-	visualize= True
-	save_flag = False
+	visualize= False
+	save_flag = True
 	if visualize:
-		img1 = img[:,:,(2,1,0)]
-		# img1=img
+		# img1 = img[:,:,(2,1,0)]
+		img1=img
 		im  = Image.fromarray(img1.astype('uint8'),'RGB')
 		im.show()
 	# cv2.imshow('img', img)
 	# cv2.waitKey(0)
 	if save_flag:
-	   cv2.imwrite('./results_imgs/{}'.format(img_name),img)
-	   # img = img[:, :, (2, 1, 0)]
-	   # cv2.imwrite('./results_imgs/video/{}.png'.format(num),img)
+	   # cv2.imwrite('./results_imgs/{}'.format(img_name),img)
+	   img = img[:, :, (2, 1, 0)]
+	   cv2.imwrite(result_folder+'/{0:04}.png'.format(num),img)
 		# print('save')
-print('true count is {} out of {} and {} of them are not good'.format(count,good_img,not_good))
+if save_flag:
+	curr_dir = os.getcwd()
+	print('true count is {} out of {} and {} of them are not good'.format(count,good_img,not_good))
+	matlab_cmd = "addpath('%s'); img2vid('%s','%s',%s);" % (curr_dir,os.path.join(curr_dir,result_folder),os.path.join(curr_dir,'results_imgs/{}'.format(file_name)),15)
+	print matlab_cmd
+	os.system('%s -nodisplay -r "try %s ; catch; end; quit;"' % (g_matlab_executable_path, matlab_cmd))
