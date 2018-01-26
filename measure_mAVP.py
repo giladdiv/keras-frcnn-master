@@ -124,7 +124,7 @@ use_NN = False
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-weight_name = 'model_FC_weight_best'
+weight_name = 'model_FC_weight_leaky_best'
 # weight_name = 'model_trip_real_only_aeroplane_best'
 C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
 
@@ -290,9 +290,9 @@ if not(test_From_File):
 				# print ('im num {}'.format(good_img))
 				X, Y, img_data = next(data_gen_train)
 
-				P_rpn = model_rpn.predict_on_batch(X)
+				[Y1, Y2, F] = model_rpn.predict_on_batch(X)
 
-				R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], C, K.image_dim_ordering(), use_regr=True, overlap_thresh=0.7,
+				R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), use_regr=True, overlap_thresh=0.7,
 										   max_boxes=300)
 
 				X2, Y1, Y2, Y_view = roi_helpers.calc_iou_new(R, img_data, C, C.class_mapping)

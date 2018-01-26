@@ -295,7 +295,7 @@ feature_input_dm = Input(shape=(None,None,1024))
 
 optimizer = Adam(lr=1e-5)
 optimizer_classifier = Adam(lr=1e-5)
-optimizer_trip = Adam(lr=1e-4)
+optimizer_trip = Adam(lr=1e-5)
 rms = RMSprop()
 
 ## siam network part
@@ -309,10 +309,10 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 	##
 	if train_view_only:
 		trainable_cls = False
-		trainable_view =  False
+		trainable_view = True
 	else:
 		trainable_cls = False
-		trainable_view =  False
+		trainable_view =  True
 	# define the base network (resnet here, can be VGG, Inception, etc)
 	shared_layers = nn.nn_base(img_input, trainable= trainable_cls)
 
@@ -388,7 +388,7 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		cos_dm = Lambda(cosine_distance,
 						output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
 		# soft_param = K.ones([1,1])*2
-		soft_param = tf.Variable(initial_value=[5.])
+		soft_param = tf.Variable(initial_value=[1.])
 
 		# soft_param = K.repeat(soft_param,2)
 		dist = Concatenate(axis=2)([cos_dm, cos_dp])
