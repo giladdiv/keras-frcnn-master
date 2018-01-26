@@ -454,6 +454,7 @@ if not(test_From_File):
 		txt_files[key].close()
 
 count ={}
+
 for cls_txt in test_cls:
 # for cls_txt in ['aeroplane']:
 	count[cls_txt] = 0
