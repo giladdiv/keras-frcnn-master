@@ -124,7 +124,7 @@ use_NN = False
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-weight_name = 'model_FC_weight_leaky_best'
+weight_name = 'model_FC_weight_best'
 # weight_name = 'model_trip_real_only_aeroplane_best'
 C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
 
@@ -185,8 +185,28 @@ def format_img(img, C):
 
 class_mapping = C.class_mapping
 
+def pred2bins(az_pred):
+    '''
+    find the bin for every quntization by sum
+    '''
+    sum_az = np.cumsum(az_pred)
+    pyr_bins = np.zeros([1,4])
+    vnum = [4, 8, 16, 24]
+    for ii in range(len(vnum)):
+        tmp_azimuth = np.concatenate(([0], np.linspace((360. / (vnum[ii] * 2)), 360. - (360. / (vnum[ii] * 2)), vnum[ii])),
+                                 axis=0)
+        sum_vec = np.diff([sum_az[i] for i in tmp_azimuth.astype(int)])
+        sum_vec[0] += sum_az[359] - sum_vec[-1]
+        pyr_bins[0,ii] = np.argmax(sum_vec) + 1 #becuse the bins starts at 1
+    return pyr_bins
+
 if 'bg' not in class_mapping:
 	class_mapping['bg'] = len(class_mapping)
+def softmax(x):
+	"""Compute softmax values for each sets of scores in x."""
+	x = x- np.min(x)
+	e_x = np.exp(x - np.max(x))
+	return e_x / e_x.sum(axis=0)
 
 inv_class_mapping = {v: k for k, v in class_mapping.iteritems()}
 print(inv_class_mapping)
@@ -355,7 +375,7 @@ if not(test_From_File):
 		# apply the spatial pyramid pooling to the proposed regions
 		bboxes = {}
 		probs = {}
-		azimuths = {}
+		azimuths,az_total = {},{}
 		inner_res = {}
 
 		for jk in range(R.shape[0] // C.num_rois + 1):
@@ -388,6 +408,7 @@ if not(test_From_File):
 					probs[cls_name] = []
 					azimuths[cls_name] = []
 					inner_res[cls_name] = []
+					az_total[cls_name] = np.empty((0,360))
 
 				(x, y, w, h) = ROIs[0, ii, :]
 
@@ -404,6 +425,7 @@ if not(test_From_File):
 				bboxes[cls_name].append([16 * x, 16 * y, 16 * (x + w), 16 * (y + h)])
 				probs[cls_name].append(np.max(P_cls[0, ii, :]))
 				azimuths[cls_name].append(np.argmax(P_view[0, ii, 360*cls_num:360*(cls_num+1)]))
+				az_total[cls_name] = np.append(az_total[cls_name],[softmax(P_view[0, ii, 360*cls_num:360*(cls_num+1)]) * np.max(P_cls[0, ii, :])],axis = 0)
 				if use_NN:
 					inner_res[cls_name].append(inner_out[0,ii,:])
 		all_dets = []
@@ -417,7 +439,9 @@ if not(test_From_File):
 				azimuth = neigh.predict(inner_result)
 			else:
 				azimuth = np.array(azimuths[key])
-			new_boxes, new_probs,new_azimuth= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth, overlap_thresh=0.5,use_az=True)
+				az_tot = np.argmax(np.array(az_total[key]))
+			new_boxes, new_probs,new_azimuth,new_total= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,az_total[key], overlap_thresh=0.5,use_az=True,use_total=True)
+			# new_azimuth = np.argmax(new_total,axis=1).tolist()
 			for jk in range(new_boxes.shape[0]):
 				(x1, y1, x2, y2) = new_boxes[jk, :]
 				det = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'class': key, 'prob': new_probs[jk],'azimuth':new_azimuth[jk]}
