@@ -18,14 +18,32 @@ import copy
 from sklearn.neighbors.classification import KNeighborsClassifier
 import tensorflow as tf
 
+def pred2bins(az_pred):
+	'''
+	find the bin for every quntization by sum
+	'''
+	sum_az = np.cumsum(az_pred)
+	# pyr_bins = np.zeros([1,4])
+	# vnum = [4, 8, 16, 24]
+	pyr_bins = np.zeros([1,])
+	vnum = [24]
 
+	for ii in range(len(vnum)):
+		tmp_azimuth = np.concatenate(([0], np.linspace((360. / (vnum[ii] * 2)), 360. - (360. / (vnum[ii] * 2)), vnum[ii])),
+								 axis=0)
+		tmp_azimuth = np.concatenate((tmp_azimuth,[359]))
+		sum_vec = np.diff([sum_az[i] for i in tmp_azimuth.astype(int)])
+		sum_vec[0] += sum_vec[-1]
+		sum_vec = sum_vec[:-1]
+		pyr_bins[ii,] = np.argmax(sum_vec) + 1 #becuse the bins starts at 1
+	return pyr_bins
 
 def discretize(ang, nPoses):
 	divAng = 360./nPoses
 	discrete_ang = np.mod(np.ceil((ang-divAng/2.)/divAng),nPoses)+1;
 	return discrete_ang
 
-def get_mAVP(pred, gt, f,key= 'aeroplane'):
+def get_mAVP(pred, gt, f,key= 'aeroplane',comp_type = 'regular'):
 	T_view = {}
 	T_bbox = {}
 	P = {}
@@ -63,8 +81,16 @@ def get_mAVP(pred, gt, f,key= 'aeroplane'):
 		if max(iou) >= 0.5 and not(gt_new[np.argmax(iou)]['bbox_matched']):
 			gt_new[np.argmax(iou)]['bbox_matched'] = True
 			T_bbox[pred_class].append(1)
-			if discretize(float(pred_box['azimuth']),24) ==  discretize(float(gt_new[np.argmax(iou)]['azimuth']),24):
-			# if float(pred_box['azimuth']) ==  discretize(float(gt_new[np.argmax(iou)]['azimuth']),24):
+			if comp_type == 'regular':
+				flag = discretize(float(pred_box['azimuth']),24) ==  discretize(float(gt_new[np.argmax(iou)]['azimuth']),24)
+			elif comp_type == 'pred2bin':
+				gt_az = np.eye(360)[int(gt_new[np.argmax(iou)]['azimuth'])]
+				flag = float(pred_box['azimuth_bin']) == pred2bins(gt_az)[0]
+			elif comp_type == 'massa':
+				flag = float(pred_box['azimuth']) ==  discretize(float(gt_new[np.argmax(iou)]['azimuth']),24)
+			else:
+				print('no valid compere type in mAVP')
+			if flag:
 				gt_new[np.argmax(iou)]['view_matched'] = True
 				T_view[pred_class].append(1)
 			else:
@@ -119,14 +145,19 @@ with open(config_output_filename, 'r') as f_in:
 	C = pickle.load(f_in)
 
 ## define all the paths
-test_From_File = False
-use_NN = True
+test_From_File = True
+use_NN = False
+comp_type = 'regular'  # 'pred2bin', 'regular' , 'massa'
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-# weight_name = 'model_FC_weight_leaky_best'
 weight_name = 'model_FC_weight_best'
-C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
+# weight_name = 'model_trip_real_only_aeroplane_best'
+C.model_path = os.path.join(curr_path,'models4test/{}.hdf5'.format(weight_name))
+
+if comp_type not in ['pred2bin', 'regular' , 'massa']:
+	print('***comp value is not valid*****')
+	exit()
 
 ## create txt files
 eval_folder = os.path.join(curr_path,'Evaluation')
@@ -185,8 +216,15 @@ def format_img(img, C):
 
 class_mapping = C.class_mapping
 
+
+
 if 'bg' not in class_mapping:
 	class_mapping['bg'] = len(class_mapping)
+def softmax(x):
+	"""Compute softmax values for each sets of scores in x."""
+	x = x- np.min(x)
+	e_x = np.exp(x - np.max(x))
+	return e_x / e_x.sum(axis=0)
 
 inv_class_mapping = {v: k for k, v in class_mapping.iteritems()}
 print(inv_class_mapping)
@@ -253,7 +291,7 @@ if not(test_From_File):
 		im_file = []
 		ind = []
 		for ii in range(360):
-			for jj in range(5):
+			for jj in range(3):
 				try:
 					im_file.append(trip_data[test_cls_NN][ii][jj])
 					ind.append(ii)
@@ -277,7 +315,8 @@ if not(test_From_File):
 
 				X2, Y1, Y2, Y_view = roi_helpers.calc_iou_new(R, img_data, C, C.class_mapping)
 
-				pos_samples = np.where(Y1[0, :, -1] == 0)
+				# pos_samples = np.where(Y1[0, :, -1] == 0)
+				pos_samples = np.where(Y_view[0, :, -1] != 20)
 				sel_samples = pos_samples[0].tolist()
 				R = X2[0,sel_samples,:]
 				for jk in range(R.shape[0] // C.num_rois + 1):
@@ -319,13 +358,15 @@ if not(test_From_File):
 		## calculating some mean feature map for every az
 		with open('pickle_data/{}_NN.pickle'.format(weight_name),'w') as f:
 			pickle.dump([inner_NN,azimuth_dict],f)
+			sio.savemat('pickle_data/{}_NN.mat', {'inner_NN': inner_NN, 'azimuth_dict': azimuth_dict})
 			print('saved PICKLE')
 		neigh = KNeighborsClassifier(n_neighbors=1)
 		neigh.fit(inner_NN, azimuth_dict)
 	elif use_NN and os.path.exists('pickle_data/{}_NN.pickle'.format(weight_name)):
          with open('pickle_data/{}_NN.pickle'.format(weight_name)) as f:
-            inner_NN, azimuth_dict = pickle.load(f)
-            print('loaded NN data for current weight')
+			inner_NN, azimuth_dict = pickle.load(f)
+			sio.savemat('pickle_data/{}_NN.mat', {'inner_NN': inner_NN, 'azimuth_dict': azimuth_dict})
+			print('loaded NN data for current weight')
          neigh = KNeighborsClassifier(n_neighbors=1)
          neigh.fit(inner_NN, azimuth_dict)
 
@@ -355,7 +396,7 @@ if not(test_From_File):
 		# apply the spatial pyramid pooling to the proposed regions
 		bboxes = {}
 		probs = {}
-		azimuths = {}
+		azimuths,az_total = {},{}
 		inner_res = {}
 
 		for jk in range(R.shape[0] // C.num_rois + 1):
@@ -388,6 +429,7 @@ if not(test_From_File):
 					probs[cls_name] = []
 					azimuths[cls_name] = []
 					inner_res[cls_name] = []
+					az_total[cls_name] = np.empty((0,360))
 
 				(x, y, w, h) = ROIs[0, ii, :]
 
@@ -404,6 +446,7 @@ if not(test_From_File):
 				bboxes[cls_name].append([16 * x, 16 * y, 16 * (x + w), 16 * (y + h)])
 				probs[cls_name].append(np.max(P_cls[0, ii, :]))
 				azimuths[cls_name].append(np.argmax(P_view[0, ii, 360*cls_num:360*(cls_num+1)]))
+				az_total[cls_name] = np.append(az_total[cls_name],[softmax(P_view[0, ii, 360*cls_num:360*(cls_num+1)]) * np.max(P_cls[0, ii, :])],axis = 0)
 				if use_NN:
 					inner_res[cls_name].append(inner_out[0,ii,:])
 		all_dets = []
@@ -417,19 +460,23 @@ if not(test_From_File):
 				azimuth = neigh.predict(inner_result)
 			else:
 				azimuth = np.array(azimuths[key])
-			new_boxes, new_probs,new_azimuth= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth, overlap_thresh=0.5,use_az=True)
+				az_tot = np.argmax(np.array(az_total[key]))
+			new_boxes, new_probs,new_azimuth,new_total= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,az_total[key], overlap_thresh=0.5,use_az=True,use_total=True)
+
 			for jk in range(new_boxes.shape[0]):
+
 				(x1, y1, x2, y2) = new_boxes[jk, :]
-				det = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'class': key, 'prob': new_probs[jk],'azimuth':new_azimuth[jk]}
+				det = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'class': key, 'prob': new_probs[jk],'azimuth':new_azimuth[jk],'azimuth_bin':pred2bins(new_total[jk,:])[0]}
 				if key in test_cls:
 					file_name = os.path.splitext(os.path.split(filepath)[1])[0]
-					txt_files[key].write('{} {} {} {} {} {} {}\n'.format(file_name,int(x1*fx),int(y1*fy),int(x2*fx),int(y2*fy),new_probs[jk],new_azimuth[jk]))
+					txt_files[key].write('{} {} {} {} {} {} {} {}\n'.format(file_name,int(x1*fx),int(y1*fy),int(x2*fx),int(y2*fy),new_probs[jk],new_azimuth[jk],pred2bins(new_total[jk,:])[0]))
 				all_dets.append(det)
 
 	for key in test_cls:
 		txt_files[key].close()
 
 count ={}
+
 for cls_txt in test_cls:
 # for cls_txt in ['aeroplane']:
 	count[cls_txt] = 0
@@ -444,17 +491,17 @@ for cls_txt in test_cls:
 	old_name =''
 	all_dets = [{'x1': int(text[0][1]), 'x2': int(text[0][3]), 'y1': int(text[0][2]), 'y2': int(text[0][4]),
 			   'class': cls_txt, 'prob': float(text[0][5]),
-			   'azimuth': int(text[0][6])}]
+			   'azimuth': int(float(text[0][6])),'azimuth_bin': int(float(text[0][7]))}]
 
 	for ii in range(1,len(text)-1):
 		det = {'x1': int(text[ii][1]), 'x2': int(text[ii][3]), 'y1': int(text[ii][2]), 'y2': int(text[ii][4]),
 			   'class': cls_txt, 'prob': float(text[ii][5]),
-			   'azimuth': int(text[ii][6])}
+			   'azimuth': int(float(text[ii][6])),'azimuth_bin': int(float(text[ii][7]))}
 		if text[ii][0] == text[ii-1][0]:
 			all_dets.append(det)
 		else:
 			idx = [text[ii-1][0] in x['filepath'] for x in test_imgs].index(True)
-			t_view, t_bbox, p = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt)
+			t_view, t_bbox, p = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt,comp_type=comp_type)
 			for key in t_view.keys():
 				if key not in T_view:
 					T_view[key] = []
@@ -466,7 +513,7 @@ for cls_txt in test_cls:
 			all_dets = [det]
 		if ii == len(text)-1 and text[ii][0] == text[ii-1][0]:
 			idx = [text[ii][0] in x['filepath'] for x in test_imgs].index(True)
-			t_view, t_bbox, p = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt)
+			t_view, t_bbox, p = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt,comp_type=comp_type)
 			for key in t_view.keys():
 				if key not in T_view:
 					T_view[key] = []
