@@ -58,7 +58,41 @@ def prep_flip(R,Y,C):
 		Y = Y_padded
 	return ROIs,Y
 
+def prep_roi_flip(R,Y,C):
+	'''
+	fill ROI with R iterativly
+	:param R:
+	:param C:
+	:return:
+	'''
+	if R.ndim == 2:
+		ROIs = np.expand_dims(R, axis=0)
+	else:
+		ROIs = R
 
+
+		# pad R with the first value of R
+	curr_shape_r = ROIs.shape
+	curr_shape_y = Y.shape
+	if curr_shape_r[1]>= C.num_rois:
+		ROIs = ROIs[:,:C.num_rois,:]
+		Y_padded = Y[:,:C.num_rois,:]
+	else:
+		target_shape_r = (curr_shape_r[0], C.num_rois, curr_shape_r[2])
+		target_shape_y = (curr_shape_y[0], C.num_rois, curr_shape_y[2])
+		ROIs_padded = np.zeros(target_shape_r).astype(ROIs.dtype)
+		Y_padded = np.zeros(target_shape_y).astype(Y.dtype)
+		ROIs_padded[:, :curr_shape_r[1], :] = ROIs
+		Y_padded[:, :curr_shape_y[1], :] = Y
+		iter_num,rem = divmod(C.num_rois,curr_shape_r[1])
+		for ii in range(iter_num):
+			ROIs_padded[0, curr_shape_r[1]*ii:curr_shape_r[1]*(ii+1), :] = ROIs[0, :, :]
+			Y_padded[0, curr_shape_y[1]*ii:curr_shape_y[1]*(ii+1), :] = Y[0, :, :]
+		if rem>0:
+			ROIs_padded[0, curr_shape_r[1]*iter_num:, :] = ROIs[0, :rem, :]
+			Y_padded[0, curr_shape_y[1]*iter_num:, :] = Y[0, :rem, :]
+		ROIs = ROIs_padded
+	return ROIs,Y_padded
 
 
 def prep_roi_siam(R,C):
