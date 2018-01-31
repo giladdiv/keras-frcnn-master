@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_tripmix.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripmix_fixedsoftmax.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -295,7 +295,7 @@ feature_input_dm = Input(shape=(None,None,1024))
 
 optimizer = Adam(lr=1e-5)
 optimizer_classifier = Adam(lr=1e-5)
-optimizer_trip = Adam(lr=1e-5)
+optimizer_trip = Adam(lr=1e-4)
 rms = RMSprop()
 
 ## siam network part
@@ -309,10 +309,10 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 	##
 	if train_view_only:
 		trainable_cls = False
-		trainable_view = True
+		trainable_view = False
 	else:
 		trainable_cls = False
-		trainable_view =  True
+		trainable_view =  False
 	# define the base network (resnet here, can be VGG, Inception, etc)
 	shared_layers = nn.nn_base(img_input, trainable= trainable_cls)
 
@@ -355,7 +355,7 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 	model_rpn.compile(optimizer=optimizer, loss=[losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors)])
 	##no weights
-	model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(C.num_classes-1),losses.class_loss_view(C.num_classes,roi_num=C.num_rois)], metrics=['accuracy'])
+	model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(C.num_classes-1),losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois)], metrics=['accuracy'])
 	## with weights
 	# model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(len(classes_count)-1),losses.class_loss_view_weight(len(classes_count),roi_num=C.num_rois)], metrics=['accuracy'])
 
@@ -388,14 +388,14 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		cos_dm = Lambda(cosine_distance,
 						output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
 		# soft_param = K.ones([1,1])*2
-		soft_param = tf.Variable(initial_value=[1.])
+		soft_param = tf.Variable(initial_value=[8.])
 
 		# soft_param = K.repeat(soft_param,2)
 		dist = Concatenate(axis=2)([cos_dm, cos_dp])
 		dist = Lambda(lambda x: x * soft_param)(dist)
 		trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
 		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm], trip)
-		model_trip.layers[10].trainable_weights.extend([soft_param])
+		# model_trip.layers[10].trainable_weights.extend([soft_param])
 		model_trip.compile(optimizer=optimizer_trip, loss='categorical_crossentropy')
 
 		return model_rpn, model_classifier, model_all, model_inner, model_trip
@@ -698,7 +698,7 @@ for epoch_num in range(num_epochs):
 				check_flag = True
 				small_bw = 5
 				if epoch_num < 20:
-					big_bw = 60
+					big_bw = 70
 				else:
 					big_bw = 15
 				if data_type == 'real':
@@ -706,7 +706,7 @@ for epoch_num in range(num_epochs):
 						try:
 							az = np.random.randint(0,359)
 							az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
-							ind_normal = np.random.normal(0,20,1)
+							ind_normal = np.random.normal(0,3,1)
 							az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal)))%360
 							data_ref = trip_data[rand_cls][az][np.random.randint(0,len(trip_data[rand_cls][az]))]
 							data_dp = trip_data[rand_cls][az_dp][np.random.randint(0,len(trip_data[rand_cls][az_dp]))]
@@ -731,6 +731,8 @@ for epoch_num in range(num_epochs):
 						except:
 							check_flag = True
 				## load 3 images with
+				model_classifier.save_weights(weight_path_tmp)
+				model_inner.load_weights(weight_path_tmp,by_name = True)
 				X_ref,R_ref,Y_ref = generate_data_trip(data_ref,C,K.image_dim_ordering())
 				X_dm,R_dm,Y_dm = generate_data_trip(data_dm,C,K.image_dim_ordering())
 				X_dp,R_dp,Y_dp = generate_data_trip(data_dp,C,K.image_dim_ordering())
@@ -743,8 +745,6 @@ for epoch_num in range(num_epochs):
 				# im_l = Image.fromarray(img_L.astype('uint8'), 'RGB')
 				# im_l.show()
 
-				model_classifier.save_weights(weight_path_tmp)
-				model_inner.load_weights(weight_path_tmp,by_name = True)
 				# kfun = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm],[model_trip.layers[11].input[0],model_trip.layers[11].input[1],model_trip.layers[11].output])
 				# kfun([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
 
