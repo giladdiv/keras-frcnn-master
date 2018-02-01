@@ -512,6 +512,8 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train',create_fli
 
 				if create_flip:
 					img_data_aug_flip, x_img_flip = data_augment.augment_gilad(img_data, use_horizontal_flips=True, augment=True)
+					y_rpn_cls_flip, y_rpn_regr_flip = calc_rpn(C, img_data_aug_flip, width, height, resized_width, resized_height)
+
 					x_img_flip = cv2.resize(x_img_flip, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
 					x_img_flip = x_img_flip[:, :, (2, 1, 0)]  # BGR -> RGB
 					x_img_flip = x_img_flip.astype(np.float32)
@@ -521,10 +523,12 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train',create_fli
 					x_img_flip /= C.img_scaling_factor
 					x_img_flip = np.transpose(x_img_flip, (2, 0, 1))
 					x_img_flip = np.expand_dims(x_img_flip, axis=0)
-					y_rpn_regr[:, y_rpn_regr.shape[1] // 2:, :, :] *= C.std_scaling
+					y_rpn_regr_flip[:, y_rpn_regr_flip.shape[1] // 2:, :, :] *= C.std_scaling
 					if backend == 'tf':
 						x_img_flip = np.transpose(x_img_flip, (0, 2, 3, 1))
-					yield np.copy(x_img), [np.copy(y_rpn_cls), np.copy(y_rpn_regr)], img_data_aug,np.copy(x_img_flip)
+						y_rpn_cls_flip = np.transpose(y_rpn_cls_flip, (0, 2, 3, 1))
+						y_rpn_regr_flip = np.transpose(y_rpn_regr_flip, (0, 2, 3, 1))
+					yield np.copy(x_img), [np.copy(y_rpn_cls), np.copy(y_rpn_regr)], img_data_aug,np.copy(x_img_flip), [np.copy(y_rpn_cls_flip), np.copy(y_rpn_regr_flip)], img_data_aug_flip
 				else:
 					yield np.copy(x_img), [np.copy(y_rpn_cls), np.copy(y_rpn_regr)], img_data_aug
 
