@@ -18,6 +18,17 @@ import copy
 from sklearn.neighbors.classification import KNeighborsClassifier
 import tensorflow as tf
 
+
+def get_real_coordinates(ratio, x1, y1, x2, y2):
+
+	real_x1 = int(round(x1 // ratio))
+	real_y1 = int(round(y1 // ratio))
+	real_x2 = int(round(x2 // ratio))
+	real_y2 = int(round(y2 // ratio))
+
+	return (real_x1, real_y1, real_x2 ,real_y2)
+
+
 def pred2bins(az_pred):
 	'''
 	find the bin for every quntization by sum
@@ -99,7 +110,11 @@ def get_mAVP(pred, gt, f,key= 'aeroplane',comp_type = 'regular'):
 		else:
 			T_bbox[pred_class].append(0)
 			T_view[pred_class].append(0)
-	return T_view, T_bbox, P
+	if len(gt_new) == 0:
+		stat = -100
+	else:
+		stat = len(gt_new)  - sum([x['view_matched'] for x in gt_new])
+	return T_view, T_bbox, P,stat
 
 def VOCap(rec,prec):
 	mrec = np.concatenate([np.concatenate([np.array([[0]]),rec],axis=1),np.array([[1]])],axis=1)
@@ -145,15 +160,19 @@ with open(config_output_filename, 'r') as f_in:
 	C = pickle.load(f_in)
 
 ## define all the paths
-test_From_File = True
+test_From_File = False
 use_NN = False
-comp_type = 'regular'  # 'pred2bin', 'regular' , 'massa'
+save_fig = True
+comp_type = 'pred2bin'  # 'pred2bin', 'regular' , 'massa'
+# class_to_color = {C.class_mapping[v]: np.random.randint(0, 255, 3) for v in C.class_mapping}
+
+
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
 weight_name = 'model_FC_weight_best'
 # weight_name = 'model_trip_real_only_aeroplane_best'
-C.model_path = os.path.join(curr_path,'models4test/{}.hdf5'.format(weight_name))
+C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
 
 if comp_type not in ['pred2bin', 'regular' , 'massa']:
 	print('***comp value is not valid*****')
@@ -168,6 +187,12 @@ try:
 	os.mkdir(eval_folder)
 except:
 	pass
+if save_fig:
+	result_folder = os.path.join(eval_folder,'Images_{}'.format(comp_type))
+	if not(os.path.exists(result_folder)):
+		os.mkdir(result_folder)
+
+
 test_cls = ['aeroplane','bicycle','boat','bus','car','chair','diningtable','motorbike','sofa','train', 'tvmonitor']
 
 
@@ -463,6 +488,35 @@ if not(test_From_File):
 				az_tot = np.argmax(np.array(az_total[key]))
 			new_boxes, new_probs,new_azimuth,new_total= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,az_total[key], overlap_thresh=0.5,use_az=True,use_total=True)
 
+			if save_fig:
+				try:
+					for jk in range(new_boxes.shape[0]):
+						if key not in test_cls:
+							pass
+						(x1, y1, x2, y2) = new_boxes[jk, :]
+
+						(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(1/fx, x1, y1, x2, y2)
+
+						cv2.rectangle(img, (real_x1, real_y1), (real_x2, real_y2), (
+						int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
+
+						# textLabel = '{}: {},azimuth : {}'.format(key,int(100*new_probs[jk]),new_az[jk])
+						textLabel = 'azimuth {}'.format(new_azimuth[jk])
+
+						all_dets.append((key, 100 * new_probs[jk]))
+
+						(retval, baseLine) = cv2.getTextSize(textLabel, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
+						textOrg = (real_x1, real_y1 + 15)
+
+						cv2.rectangle(img, (textOrg[0] - 1, textOrg[1] + baseLine - 1),
+									  (textOrg[0] + retval[0] + 1, textOrg[1] - retval[1] - 1), (0, 0, 0), 2)
+						cv2.rectangle(img, (textOrg[0] - 1, textOrg[1] + baseLine - 1),
+									  (textOrg[0] + retval[0] + 1, textOrg[1] - retval[1] - 1), (255, 255, 255), -1)
+						cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+					# img = img[:, :, (2, 1, 0)]
+					cv2.imwrite(result_folder + '/{0:04}.png'.format(idx), img)
+				except:
+					pass
 			for jk in range(new_boxes.shape[0]):
 
 				(x1, y1, x2, y2) = new_boxes[jk, :]
@@ -476,10 +530,16 @@ if not(test_From_File):
 		txt_files[key].close()
 
 count ={}
+T_stat = {}
+all_names = []
+for ii in test_imgs:
+	all_names.append(ii['filepath'])
+
 
 for cls_txt in test_cls:
 # for cls_txt in ['aeroplane']:
 	count[cls_txt] = 0
+	T_stat[cls_txt] = np.zeros(len(test_imgs))
 	with open(os.path.join(eval_folder,'{}.txt'.format(cls_txt)),'r') as f:
 		text = f.readlines()
 		text = [x.split() for x in text]
@@ -501,7 +561,12 @@ for cls_txt in test_cls:
 			all_dets.append(det)
 		else:
 			idx = [text[ii-1][0] in x['filepath'] for x in test_imgs].index(True)
-			t_view, t_bbox, p = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt,comp_type=comp_type)
+			t_view, t_bbox, p,stat = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt,comp_type=comp_type)
+			if stat == 0:
+				T_stat[cls_txt][idx] = 100
+			else:
+				T_stat[cls_txt][idx] = stat
+
 			for key in t_view.keys():
 				if key not in T_view:
 					T_view[key] = []
@@ -513,7 +578,11 @@ for cls_txt in test_cls:
 			all_dets = [det]
 		if ii == len(text)-1 and text[ii][0] == text[ii-1][0]:
 			idx = [text[ii][0] in x['filepath'] for x in test_imgs].index(True)
-			t_view, t_bbox, p = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt,comp_type=comp_type)
+			t_view, t_bbox, p,stat = get_mAVP(all_dets, test_imgs[idx]['bboxes'], (1, 1),key=cls_txt,comp_type=comp_type)
+			if stat == 0:
+				T_stat[cls_txt][idx] = 100
+			else:
+				T_stat[cls_txt][idx] = stat
 			for key in t_view.keys():
 				if key not in T_view:
 					T_view[key] = []
@@ -525,6 +594,9 @@ for cls_txt in test_cls:
 
 all_aps = []
 all_avps = []
+
+with open('{}_{}.pickle'.format(weight_name,comp_type),'w') as f:
+	pickle.dump(T_stat,f)
 
 for key in test_cls:
 # for key in ['aeroplane']:
