@@ -10,7 +10,7 @@ import os
 from keras.losses import mean_squared_error
 from keras import backend as K
 from keras.optimizers import Adam, SGD, RMSprop
-from keras.layers import Input,Lambda,Flatten
+from keras.layers import Input,Lambda,Flatten,Activation
 from keras.models import Model
 from keras_frcnn import config, data_generators
 from keras_frcnn import losses as losses
@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_flip.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_flip_lastlayer.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -65,6 +65,7 @@ else:
 cls_num = 21
 data_len = 360
 fc_size = 1024
+fc_size = 360
 last_layer = (options.num_rois,cls_num*data_len)
 
 def create_mat_siam(label=7,cls_num=21):
@@ -121,6 +122,15 @@ def mat_flip_lambda(vects):
 	x= K.reshape(x,[-1,fc_size])
 	h =tf.matmul(x,
 			  K.constant(create_mat_flip(), shape=[fc_size, fc_size], dtype=tf.float32))
+	h =K.reshape(h,[-1,last_layer[0],fc_size])
+	return h
+
+def mat_flip_lambda_old(vects):
+	# https://stackoverflow.com/questions/38235555/tensorflow-matmul-of-input-matrix-with-batch-data
+	x = vects
+	x= K.reshape(x,[-1,fc_size])
+	h =tf.matmul(x,
+			  K.constant(create_mat_flip_old(), shape=[fc_size, fc_size], dtype=tf.float32))
 	h =K.reshape(h,[-1,last_layer[0],fc_size])
 	return h
 
@@ -259,7 +269,7 @@ with open(config_output_filename, 'wb') as config_f:
 	pickle.dump(C,config_f)
 	print('Config has been written to {}, and can be loaded when testing to ensure correct results'.format(config_output_filename))
 
-# random.shuffle(all_imgs)
+random.shuffle(all_imgs)
 
 num_imgs = len(all_imgs)
 
@@ -305,7 +315,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'models/model_FC_weight_init.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_FC_weight_best.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -314,10 +324,10 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 	##
 	if train_view_only:
 		trainable_cls = False
-		trainable_view = True
+		trainable_view =False
 	else:
 		trainable_cls = False
-		trainable_view =  True
+		trainable_view =  False
 	# define the base network (resnet here, can be VGG, Inception, etc)
 	shared_layers = nn.nn_base(img_input, trainable= trainable_cls)
 
@@ -376,16 +386,37 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		inner_flip = model_inner([img_input_flip,roi_input_flip])
 		cls_flip = model_view_only([img_input_flip,roi_input_flip])
 
-		inner_flip = Lambda(mat_flip_lambda,mat_lambda_flip_output_shape)(inner_flip)
-		flat_ref = Flatten()(inner_ref)
-		flat_flip = Flatten()(inner_flip)
+		##### first way, flip the feature layer
+		# inner_flip = Lambda(mat_flip_lambda,mat_lambda_flip_output_shape)(inner_flip)
+		# flat_ref = Flatten()(inner_ref)
+		# flat_flip = Flatten()(inner_flip)
+        #
+		# sub = Lambda(euclidean_distance,output_shape=eucl_dist_output_shape)([flat_ref,flat_flip])
+		# sub = Lambda(lambda x: x * .5)(sub)
+        #
+		# model_flip = Model([img_input_ref, roi_input_ref, img_input_flip, roi_input_flip], [cls_ref,cls_flip,sub])
+		# model_flip.compile(optimizer=optimizer_trip, loss=[losses.class_loss_view_weight(len(classes_count),C.num_rois),losses.class_loss_view_weight(len(classes_count),C.num_rois),'mse'])
 
-		sub = Lambda(euclidean_distance,output_shape=eucl_dist_output_shape)([flat_ref,flat_flip])
-		sub = Lambda(lambda x: x * .5)(sub)
+
+		##### second way, flip the last layer
+		view_non_flip = SliceTensor(len(class_mapping),C.num_rois)([cls_ref,labels_input])
+		view_flip = SliceTensor(len(class_mapping),C.num_rois)([cls_flip,labels_input])
+		# view_flip = K.expand_dims(view_flip,axis=0)
+		view_flip = Lambda(mat_flip_lambda_old,output_shape=mat_lambda_flip_output_shape)(view_flip)
+
+		view_flip = Activation('softmax')(view_flip)
+		view_non_flip = Activation('softmax')(view_non_flip)
+
+		flat_flip = Flatten()(view_flip)
+		flat_non_flip = Flatten()(view_non_flip)
+
+		distance_flip = Lambda(euclidean_distance,
+				output_shape=eucl_dist_output_shape)([flat_non_flip, flat_flip])
 
 
-		model_flip = Model([img_input_ref, roi_input_ref, img_input_flip, roi_input_flip], [cls_ref,cls_flip,sub])
+		model_flip = Model([img_input_ref, roi_input_ref, img_input_flip, roi_input_flip,labels_input], [cls_ref,cls_flip,distance_flip])
 		model_flip.compile(optimizer=optimizer_trip, loss=[losses.class_loss_view_weight(len(classes_count),C.num_rois),losses.class_loss_view_weight(len(classes_count),C.num_rois),'mse'])
+
 
 		return model_rpn, model_classifier, model_all, model_inner, model_flip
 
@@ -455,7 +486,7 @@ def prep_siam(img,C):
 	return X,R,ratio
 
 
-func_k = K.function([img_input_ref, roi_input_ref, img_input_flip, roi_input_flip],[model_flip.layers[5].input,model_flip.layers[5].output])
+func_k = K.function([img_input_ref, roi_input_ref, img_input_flip, roi_input_flip,labels_input],[model_flip.layers[6].output,model_flip.layers[7].output])
 
 for epoch_num in range(num_epochs):
 
@@ -474,6 +505,9 @@ for epoch_num in range(num_epochs):
 
 			X, Y, img_data,X_flip, Y_flip, img_data_flip = next(data_gen_train)
 
+			## flip can work only if a single object is present
+			if len(img_data['bboxes'])>1:
+				continue
 			# loss_rpn = model_rpn.train_on_batch(X, Y)
 
 			### deal with regular image
@@ -515,7 +549,7 @@ for epoch_num in range(num_epochs):
 			# loss_class = model_classifier.train_on_batch([X, X2[:, sel_samples_regular, :]], [Y1[:, sel_samples_regular, :], Y2[:, sel_samples_regular, :],Y_view[:, sel_samples_regular, :]])
 
 			#### train flip net
-			loss_flip = model_flip.train_on_batch([X, X2,X_flip, X2_flip],[Y_view, Y_view_flip,np.array([[0]])])
+			loss_flip = model_flip.train_on_batch([X, X2,X_flip, X2_flip,Y_view],[Y_view, Y_view_flip,np.array([[0]])])
 			if iter_num%500 == 0 :
 				model_inner.save_weights(weight_path_tmp)
 				model_classifier.load_weights(weight_path_tmp,by_name=True)
