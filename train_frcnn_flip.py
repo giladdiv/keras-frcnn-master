@@ -526,7 +526,8 @@ for epoch_num in range(num_epochs):
 
 			pos_samples = np.where(Y_view[0, :, -1] != 20)
 			sel_samples_regular = pos_samples[0].tolist()
-
+			if len(sel_samples_regular) == 0:
+				continue
 
 			### deal with flip image
 			P_rpn = model_rpn.predict_on_batch(X_flip)
@@ -539,7 +540,8 @@ for epoch_num in range(num_epochs):
 
 			pos_samples = np.where(Y_view_flip[0, :, -1] != 20)
 			sel_samples_flip = pos_samples[0].tolist()
-
+			if len(sel_samples_flip) == 0:
+				continue
 
 
 			loss_class = [0,0,0,0,0,0,0]
