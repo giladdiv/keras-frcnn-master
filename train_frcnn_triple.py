@@ -300,7 +300,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'models/model_FC_weight_best.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_tripmix_fixedsoftmax_epoch_65.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -697,8 +697,8 @@ for epoch_num in range(num_epochs):
 
 				check_flag = True
 				small_bw = 5
-				if epoch_num < 20:
-					big_bw = 70
+				if epoch_num < 30:
+					big_bw = 90
 				else:
 					big_bw = 15
 				if data_type == 'real':
@@ -712,8 +712,11 @@ for epoch_num in range(num_epochs):
 							data_dp = trip_data[rand_cls][az_dp][np.random.randint(0,len(trip_data[rand_cls][az_dp]))]
 							dm_idx = np.random.randint(0,len(trip_data[rand_cls][az_dm]))
 							data_dm = trip_data[rand_cls][az_dm][dm_idx]
+							if (len(data_dm['bboxes'])!=1) or (len(data_dp['bboxes'])!=1) or (len(data_ref['bboxes'])!=1):
+								check_flag = True
+							else:
+								check_flag = False
 							# data_dm2 = trip_data[rand_cls][az_dm][(dm_idx+1)%len(trip_data[rand_cls][az_dm])]
-							check_flag = False
 						except:
 							check_flag = True
 				else:
@@ -727,7 +730,10 @@ for epoch_num in range(num_epochs):
 							data_ref = trip_data[rand_cls][folder][az][np.random.randint(0,len(trip_data[rand_cls][folder][az]))]
 							data_dp = trip_data[rand_cls][folder][az_dp][np.random.randint(0,len(trip_data[rand_cls][folder][az_dp]))]
 							data_dm = trip_data[rand_cls][folder][az_dm][np.random.randint(0,len(trip_data[rand_cls][folder][az_dm]))]
-							check_flag = False
+							if (len(data_dm['bboxes'])!=1) or (len(data_dp['bboxes'])!=1) or (len(data_ref['bboxes'])!=1):
+								check_flag = True
+							else:
+								check_flag = False
 						except:
 							check_flag = True
 				## load 3 images with
