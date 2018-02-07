@@ -709,11 +709,14 @@ def non_max_suppression_fast(boxes, probs,azimuth=0,az_total=0, overlap_thresh=0
 	probs = probs[pick]
 	if use_az and use_total:
 		az_count = []
+		idx_rep = []
 		az_tot = np.empty((0,360))
 		for az_id in idx_az:
-			az_count.append(np.argmax(np.bincount(azimuth[az_id])))
+			az_count_tmp = np.argmax(np.bincount(azimuth[az_id]))
+			az_count.append(az_count_tmp)
+			idx_rep.append(az_id[azimuth[az_id] == az_count_tmp])
 			az_tot =np.append(az_tot,[np.sum(az_total[az_id,:],axis=0)],axis=0)
-		return boxes, probs, az_count,az_tot
+		return boxes, probs, az_count,az_tot,idx_rep
 	elif use_az and not(use_total):
 		az_count = []
 		for az_id in idx_az:
