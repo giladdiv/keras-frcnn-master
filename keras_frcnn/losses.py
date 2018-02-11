@@ -141,3 +141,40 @@ def class_loss_view_weight(num_classes,roi_num):
 		# labels_az = tf.Print(labels_az, [tf.shape(fc_az_l)])
 		return y
 	return class_loss_view_temp
+
+
+def quat_loss(num_classes,roi_num):
+	def quat_loss_temp(y_true, y_pred):
+		pred = y_pred[0, :, :]
+		labels_az = y_true[0,:,:4]
+		labels_mask = y_true[0,:,4:-1]
+		labels = tf.to_int32(y_true[0,:,-1])
+
+		## find the indicies of the bg
+		bg = tf.constant(num_classes-1, dtype=tf.int32)
+		indices = tf.where(tf.not_equal(labels, bg))
+
+		zero = tf.constant(0, dtype=tf.float32)
+		for i in range(roi_num):
+			indices_mask = tf.where(tf.not_equal(labels_mask[i, :], zero))
+			indices_mask = tf.reshape(indices_mask, [-1])
+			if i == 0:
+				fc_az_l = tf.reshape(tf.gather(pred[i], indices_mask), [1, -1])
+			else:
+				fc_az_l = tf.concat(axis=0, values=[fc_az_l, tf.reshape(tf.gather(pred[i], indices_mask), [1, -1])])
+
+
+		az_tmp = tf.gather_nd(fc_az_l,indices=indices)
+		labels_tmp = tf.gather_nd(labels_az,indices=indices)
+
+		y = tf.cond(tf.shape(indices)[0]>0,lambda:lambda_cls_view_weight * K.mean(K.square(az_tmp- labels_tmp), axis=-1),
+					lambda:zero)
+		# y = K.sum(y)
+
+		# y = tf.Print(y,[tf.shape(az_tmp)])
+		# y = tf.Print(y, [tf.argmax(labels_tmp, axis=1)])
+		# y = tf.Print(y, [tf.argmax(az_tmp, axis=1)])
+		# y = tf.Print(y, [y])
+		# labels_az = tf.Print(labels_az, [tf.shape(fc_az_l)])
+		return y
+	return quat_loss_temp

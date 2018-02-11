@@ -1,4 +1,5 @@
 """
+https://github.com/bistromath/gr-air-modes/blob/master/python/Quaternion.py
 Quaternion provides a class for manipulating quaternion objects.  This class provides:
    - a convenient constructor to convert to/from Euler Angles (RA,Dec,Roll)
        to/from quaternions
