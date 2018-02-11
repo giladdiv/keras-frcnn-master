@@ -19,6 +19,8 @@ from sklearn.neighbors.classification import KNeighborsClassifier
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
+from skimage import color
+from skimage import img_as_float
 
 
 def get_real_coordinates(ratio, x1, y1, x2, y2):
@@ -166,8 +168,8 @@ test_From_File = False
 use_NN = False
 save_fig = False
 visualize = True
-test_idx = 4863
-comp_type = 'pred2bin'  # 'pred2bin', 'regular' , 'massa'
+test_idx = 3080
+comp_type = 'regular'  # 'pred2bin', 'regular' , 'massa'
 # class_to_color = {C.class_mapping[v]: np.random.randint(0, 255, 3) for v in C.class_mapping}
 
 
@@ -417,7 +419,7 @@ if not(test_From_File):
 		# get the feature maps and output from the RPN
 		[Y1, Y2,F] = model_rpn.predict(X)
 
-		R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
+		R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7,max_boxes=300)
 
 		# convert from (x1,y1,x2,y2) to (x,y,w,h)
 		R[:, 2] -= R[:, 0]
@@ -531,9 +533,40 @@ if not(test_From_File):
 
 			if visualize:
 				for tt in range(new_total.shape[0]):
+					# prob1 = new_total[tt,:]
+					# az_real = 0
+					# fig = plt.figure()
+					# plt.subplot(211)
+					# img_t = copy.deepcopy(img)
+					# plt.title('image {} cls {}'.format(idx,key))
+					# (x1, y1, x2, y2) = new_boxes[tt, :]
+                    #
+					# (real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(1 / fx, x1, y1, x2, y2)
+                    #
+					# cv2.rectangle(img_t, (real_x1, real_y1), (real_x2, real_y2), (
+					# 	int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
+					# # im.show()
+					# img_t = img_t[:, :, (2, 1, 0)]
+
+					# prob_3= np.expand_dims(softmax(prob_az[key][idx_az[tt][-1]]),axis =2)
+					# tmp_img = np.tile(tmp_img,[10,1,3])
+					# tmp_img[:,100,:] = [255,0,0]
+					# imgs = [Image.fromarray(img_t.astype('uint8')), Image.fromarray(tmp_img.astype('uint8'))]
+					# # imgs    = [ im, a]
+					# # pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
+					# min_shape = sorted([i.size for i in imgs])[1][0]
+					# imgs_comb = []
+					# for ii in range(len(imgs)):
+					# 	imgs_comb.append(imgs[ii].resize([min_shape, imgs[ii].size[1]]))
+					# imgs_comb = np.vstack((imgs_comb[0], imgs_comb[1]))
+					# imgs_comb = Image.fromarray(imgs_comb)
+					# plt.imshow(imgs_comb)
+					# plt.yticks([])
+					# plt.show()
+
+					fig = plt.figure()
 					prob1 = new_total[tt,:]
 					az_real = 0
-					fig = plt.figure()
 					plt.subplot(311)
 					img_t = copy.deepcopy(img)
 					plt.title('image {} cls {}'.format(idx,key))
@@ -547,6 +580,7 @@ if not(test_From_File):
 					img_t = img_t[:, :, (2, 1, 0)]
 					im = Image.fromarray(img_t.astype('uint8'), 'RGB')
 					plt.imshow(im)
+					plt.axis('off')
 					# plt.interactive(True)False
 					plt.subplot(312)
 					true180 = (az_real + 180) % 360
@@ -557,7 +591,13 @@ if not(test_From_File):
 					plt.plot(np.asarray(prob1), '-g')
 					# plt.legend()
 					plt.subplot(313)
-					plt.plot(np.asarray(softmax(prob_az[key][idx_az[tt][-1]])), '-g')
+					prob_3= softmax(prob_az[key][idx_az[tt][-1]])
+					# plt.plot(np.asarray(prob_3), '-g')
+					tmp_img = np.tile(-prob_3,[10,1])
+					fig = plt.imshow(tmp_img, interpolation='nearest')
+					fig.set_cmap('gray')
+					plt.axis('off')
+					plt.plot(150 * np.ones([10, ]), np.linspace(0, 10, 10),'-b')
 					plt.title('predict az {} pedict bin {} predict bin total{}'.format(new_azimuth[tt],discretize(new_azimuth[tt],24),pred2bins(new_total[tt,:])[0]))
 					# plt.title('az_calc {} az pred {}'.format(az_calc, new_azimuth))
 
