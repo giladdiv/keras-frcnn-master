@@ -10,7 +10,7 @@ import time
 import pickle
 from time import sleep
 import copy
-
+from keras_frcnn.Quaternion import Quat
 
 def timing(f):
     def wrap(*args):
@@ -172,7 +172,8 @@ def get_data():
 								az = int(obj_view['azimuth'])%360
 								el = int(obj_view['elevation'])%360
 								t = int(obj_view['theta'])%360
-							curr_bbox = {'class': class_name, 'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'difficult': difficulty,'azimuth':az,'elevation':el,'tilt':t,'viewpoint_data':True}
+							q = Quat([az,el,t])
+							curr_bbox = {'class': class_name, 'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'difficult': difficulty,'azimuth':az,'elevation':el,'tilt':t,'viewpoint_data':True,'quat':q}
 							annotation_data_cls['bboxes'] = [curr_bbox]
 							data_cls = annotation_data_cls
 							annotation_data['bboxes'].append(curr_bbox)
@@ -182,8 +183,9 @@ def get_data():
 							if flip_flag:
 								## x1 and x2 need to be replaced when fliping the image
 								annotation_data_lr['viewpoint_data'] = annotation_data['viewpoint_data']
+								q = Quat([(360 - az) % 360,el,t])
 								curr_bbox ={'class': class_name, 'x1': element_width - x2, 'x2': element_width - x1, 'y1': y1,'y2': y2, 'difficult': difficulty, 'azimuth': (360 - az) % 360, 'elevation': el,
-									 'tilt': t, 'viewpoint_data': True}
+									 'tilt': t, 'viewpoint_data': True, 'quat': q}
 								annotation_data_lr['bboxes'].append(curr_bbox)
 								annotation_data_lr_cls['bboxes'] = [curr_bbox]
 								data_cls = annotation_data_lr_cls
