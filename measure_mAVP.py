@@ -17,6 +17,8 @@ from sklearn.metrics import average_precision_score
 import copy
 from sklearn.neighbors.classification import KNeighborsClassifier
 import tensorflow as tf
+import matplotlib.pyplot as plt
+from PIL import Image
 
 
 def get_real_coordinates(ratio, x1, y1, x2, y2):
@@ -162,7 +164,9 @@ with open(config_output_filename, 'r') as f_in:
 ## define all the paths
 test_From_File = False
 use_NN = False
-save_fig = True
+save_fig = False
+visualize = True
+test_idx = 4863
 comp_type = 'pred2bin'  # 'pred2bin', 'regular' , 'massa'
 # class_to_color = {C.class_mapping[v]: np.random.randint(0, 255, 3) for v in C.class_mapping}
 
@@ -388,18 +392,19 @@ if not(test_From_File):
 		neigh = KNeighborsClassifier(n_neighbors=1)
 		neigh.fit(inner_NN, azimuth_dict)
 	elif use_NN and os.path.exists('pickle_data/{}_NN.pickle'.format(weight_name)):
-         with open('pickle_data/{}_NN.pickle'.format(weight_name)) as f:
+		 with open('pickle_data/{}_NN.pickle'.format(weight_name)) as f:
 			inner_NN, azimuth_dict = pickle.load(f)
 			sio.savemat('pickle_data/{}_NN.mat', {'inner_NN': inner_NN, 'azimuth_dict': azimuth_dict})
 			print('loaded NN data for current weight')
-         neigh = KNeighborsClassifier(n_neighbors=1)
-         neigh.fit(inner_NN, azimuth_dict)
+		 neigh = KNeighborsClassifier(n_neighbors=1)
+		 neigh.fit(inner_NN, azimuth_dict)
 
 	tsne_data ={}
 	for idx, img_data in enumerate(test_imgs):
 		if idx %50 == 0:
 			print('{}/{}'.format(idx,len(test_imgs)))
-
+		if idx!= test_idx:
+			continue
 		filepath = img_data['filepath']
 
 		img = cv2.imread(filepath)
@@ -420,7 +425,7 @@ if not(test_From_File):
 
 		# apply the spatial pyramid pooling to the proposed regions
 		bboxes = {}
-		probs = {}
+		probs,prob_az = {},{}
 		azimuths,az_total = {},{}
 		inner_res = {}
 
@@ -452,6 +457,7 @@ if not(test_From_File):
 				if cls_name not in bboxes:
 					bboxes[cls_name] = []
 					probs[cls_name] = []
+					prob_az[cls_name] = []
 					azimuths[cls_name] = []
 					inner_res[cls_name] = []
 					az_total[cls_name] = np.empty((0,360))
@@ -470,6 +476,7 @@ if not(test_From_File):
 					pass
 				bboxes[cls_name].append([16 * x, 16 * y, 16 * (x + w), 16 * (y + h)])
 				probs[cls_name].append(np.max(P_cls[0, ii, :]))
+				prob_az[cls_name].append(P_view[0, ii, 360*cls_num:360*(cls_num+1)])
 				azimuths[cls_name].append(np.argmax(P_view[0, ii, 360*cls_num:360*(cls_num+1)]))
 				az_total[cls_name] = np.append(az_total[cls_name],[softmax(P_view[0, ii, 360*cls_num:360*(cls_num+1)]) * np.max(P_cls[0, ii, :])],axis = 0)
 				if use_NN:
@@ -477,6 +484,8 @@ if not(test_From_File):
 		all_dets = []
 
 		for key in bboxes:
+			if key not in test_cls:
+				continue
 			bbox = np.array(bboxes[key])
 			prob = np.array(probs[key])
 			if use_NN:
@@ -485,14 +494,13 @@ if not(test_From_File):
 				azimuth = neigh.predict(inner_result)
 			else:
 				azimuth = np.array(azimuths[key])
-				az_tot = np.argmax(np.array(az_total[key]))
-			new_boxes, new_probs,new_azimuth,new_total= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,az_total[key], overlap_thresh=0.5,use_az=True,use_total=True)
+			new_boxes, new_probs,new_azimuth,new_total,idx_az= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,az_total[key], overlap_thresh=0.5,use_az=True,use_total=True)
 
 			if save_fig:
 				try:
 					for jk in range(new_boxes.shape[0]):
 						if key not in test_cls:
-							pass
+							continue
 						(x1, y1, x2, y2) = new_boxes[jk, :]
 
 						(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(1/fx, x1, y1, x2, y2)
@@ -501,7 +509,10 @@ if not(test_From_File):
 						int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
 
 						# textLabel = '{}: {},azimuth : {}'.format(key,int(100*new_probs[jk]),new_az[jk])
-						textLabel = 'azimuth {}'.format(new_azimuth[jk])
+						if comp_type == 'pred2bin':
+							textLabel = 'azimuth {}'.format(np.argmax(new_total[jk]))
+						else:
+							textLabel = 'azimuth {}'.format(new_azimuth[jk])
 
 						all_dets.append((key, 100 * new_probs[jk]))
 
@@ -517,6 +528,42 @@ if not(test_From_File):
 					cv2.imwrite(result_folder + '/{0:04}.png'.format(idx), img)
 				except:
 					pass
+
+			if visualize:
+				for tt in range(new_total.shape[0]):
+					prob1 = new_total[tt,:]
+					az_real = 0
+					fig = plt.figure()
+					plt.subplot(311)
+					img_t = copy.deepcopy(img)
+					plt.title('image {} cls {}'.format(idx,key))
+					(x1, y1, x2, y2) = new_boxes[tt, :]
+
+					(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(1 / fx, x1, y1, x2, y2)
+
+					cv2.rectangle(img_t, (real_x1, real_y1), (real_x2, real_y2), (
+						int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
+					# im.show()
+					img_t = img_t[:, :, (2, 1, 0)]
+					im = Image.fromarray(img_t.astype('uint8'), 'RGB')
+					plt.imshow(im)
+					# plt.interactive(True)False
+					plt.subplot(312)
+					true180 = (az_real + 180) % 360
+					plt.plot(az_real * np.ones([10, ]), np.linspace(0, prob1[az_real], 10), '-b', label='true azimuth')
+					plt.plot(true180 * np.ones([10, ]), np.linspace(0, prob1[true180], 10), '*b',
+							 label='180 from true azimuth')
+					plt.plot(new_azimuth[tt] * np.ones([10, ]), np.linspace(0, prob1[new_azimuth[tt]], 10), '-r', label='predict azimuth')
+					plt.plot(np.asarray(prob1), '-g')
+					# plt.legend()
+					plt.subplot(313)
+					plt.plot(np.asarray(softmax(prob_az[key][idx_az[tt][-1]])), '-g')
+					plt.title('predict az {} pedict bin {} predict bin total{}'.format(new_azimuth[tt],discretize(new_azimuth[tt],24),pred2bins(new_total[tt,:])[0]))
+					# plt.title('az_calc {} az pred {}'.format(az_calc, new_azimuth))
+
+					plt.show()
+
+
 			for jk in range(new_boxes.shape[0]):
 
 				(x1, y1, x2, y2) = new_boxes[jk, :]
