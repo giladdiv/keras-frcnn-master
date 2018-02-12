@@ -26,7 +26,7 @@ def timing(f):
 def get_data():
 	base_path = os.getcwd() + '/../VOCdevkit'
 	# data_phase = "test"
-	cls = "aeroplane"
+	# cls = "aeroplane"
 	# base_path = '/home/gilad/ssd/keras-frcnn-master/VOCdevkit'
 	all_imgs = []
 	data_by_cls ={}
@@ -53,7 +53,7 @@ def get_data():
 			else:
 				imgs_path = os.path.join(data_path, 'imagenet_images')
 			imgsets_path_trainval = os.path.join(data_path, 'ImageSets','Main','trainval.txt')
-			imgsets_path_test = os.path.join(data_path, 'ImageSets','Main','all_test.txt'.format(cls))
+			imgsets_path_test = os.path.join(data_path, 'ImageSets','Main','all_test.txt')
 			annots = []
 			trainval_files = []
 			test_files = []
@@ -165,6 +165,7 @@ def get_data():
 							obj_view = element_obj['viewpoint']
 							annotation_data['viewpoint_data'] = True
 							if obj_view['distance'] == 0:
+								continue
 								az = int(obj_view['azimuth_coarse'])%360
 								el = int(obj_view['elevation'])%360
 								t = int(obj_view['theta'])%360
