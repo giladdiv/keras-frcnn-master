@@ -165,6 +165,7 @@ def get_data():
 							obj_view = element_obj['viewpoint']
 							annotation_data['viewpoint_data'] = True
 							if obj_view['distance'] == 0:
+								continue
 								az = int(obj_view['azimuth_coarse'])%360
 								el = int(obj_view['elevation'])%360
 								t = int(obj_view['theta'])%360
