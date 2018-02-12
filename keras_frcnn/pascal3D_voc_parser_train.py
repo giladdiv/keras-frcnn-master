@@ -53,7 +53,7 @@ def get_data():
 			else:
 				imgs_path = os.path.join(data_path, 'imagenet_images')
 			imgsets_path_trainval = os.path.join(data_path, 'ImageSets','Main','trainval.txt')
-			imgsets_path_test = os.path.join(data_path, 'ImageSets','Main','all_test.txt'.format(cls))
+			imgsets_path_test = os.path.join(data_path, 'ImageSets','Main','all_test.txt')
 			annots = []
 			trainval_files = []
 			test_files = []
