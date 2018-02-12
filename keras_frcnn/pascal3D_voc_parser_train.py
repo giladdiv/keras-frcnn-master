@@ -109,7 +109,7 @@ def get_data():
 						else:
 							annotation_data = {'filepath': os.path.join(imgs_path, element_filename),
 											   'width': element_width,
-											   'height': element_height, 'bboxes': [], 'viewpoint': []}
+											   'height': element_height, 'bboxes': [], 'viewpoint': [],'viewpoint_data': False}
 							annotation_data_cls = copy.deepcopy(annotation_data)
 							annotation_data['imageset'] = 'train'
 							if flip_flag :
@@ -126,7 +126,7 @@ def get_data():
 									cv2.imwrite(new_path, img_lr)
 								annotation_data_lr = {'filepath': new_path,
 											   'width': element_width,
-											   'height': element_height, 'bboxes': [], 'viewpoint': []}
+											   'height': element_height, 'bboxes': [], 'viewpoint': [],'viewpoint_data': False}
 								annotation_data_lr_cls = copy.deepcopy(annotation_data_lr)
 					for ii in range(element_objs_num):
 						element_obj = element['objects{}'.format(ii)]
@@ -163,11 +163,12 @@ def get_data():
 						## read pose_data
 						try:
 							obj_view = element_obj['viewpoint']
-							annotation_data['viewpoint_data'] = True
+
 							if obj_view['distance'] == 0:
 								skip_bbox += 1
 								# print(string)
 								continue
+								annotation_data['viewpoint_data'] = True
 								az = int(obj_view['azimuth_coarse'])%360
 								el = int(obj_view['elevation'])%360
 								t = int(obj_view['theta'])%360
@@ -197,7 +198,7 @@ def get_data():
 							annotation_data['bboxes'].append({'class': class_name, 'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'difficult': difficulty,'azimuth': 0,'elevation': 0,'tilt': 0,'viewpoint_data':False})
 
 
-					if annotation_data['imageset'] !='test':
+					if annotation_data['imageset'] !='test' and  len(annotation_data['bboxes'])!=0:
 						all_imgs.append(annotation_data)
 						# if flip_flag and data_type =='pascal':
 						if flip_flag:
