@@ -169,6 +169,7 @@ def get_data():
 								# print(string)
 								continue
 								annotation_data['viewpoint_data'] = True
+								annotation_data_cls['viewpoint_data'] = True
 								az = int(obj_view['azimuth_coarse'])%360
 								el = int(obj_view['elevation'])%360
 								t = int(obj_view['theta'])%360
@@ -187,6 +188,7 @@ def get_data():
 							if flip_flag:
 								## x1 and x2 need to be replaced when fliping the image
 								annotation_data_lr['viewpoint_data'] = annotation_data['viewpoint_data']
+								annotation_data_lr_cls['viewpoint_data'] = annotation_data['viewpoint_data']
 								q = Quat([(360 - az) % 360,el,t])
 								curr_bbox ={'class': class_name, 'x1': element_width - x2, 'x2': element_width - x1, 'y1': y1,'y2': y2, 'difficult': difficulty, 'azimuth': (360 - az) % 360, 'elevation': el,
 									 'tilt': t, 'viewpoint_data': True, 'quat': q}
