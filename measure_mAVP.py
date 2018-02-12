@@ -168,7 +168,7 @@ test_From_File = False
 use_NN = False
 save_fig = False
 visualize = True
-test_idx = 3080
+test_idx = 203
 comp_type = 'regular'  # 'pred2bin', 'regular' , 'massa'
 # class_to_color = {C.class_mapping[v]: np.random.randint(0, 255, 3) for v in C.class_mapping}
 
@@ -533,10 +533,44 @@ if not(test_From_File):
 
 			if visualize:
 				for tt in range(new_total.shape[0]):
+					prob1 = new_total[tt,:]
+					az_real = 0
+					fig = plt.figure()
+					img_t = copy.deepcopy(img)
+					# plt.title('image {} cls {}'.format(idx,key))
+					(x1, y1, x2, y2) = new_boxes[tt, :]
+
+					(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(1 / fx, x1, y1, x2, y2)
+
+					cv2.rectangle(img_t, (real_x1, real_y1), (real_x2, real_y2), (
+						int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
+					# im.show()
+					img_t = img_t[:, :, (2, 1, 0)]
+					id_overlap = roi_helpers.overlap_display(img_data['bboxes'],[real_x1, real_y1, real_x2, real_y2])
+					tmp_img= np.expand_dims(prob_az[key][idx_az[tt][-1]],axis =2)
+					tmp_img = tmp_img-min(tmp_img)
+					tmp_img = 255-tmp_img/max(tmp_img)*255
+					tmp_img = np.tile(tmp_img,[30,1,3])
+					tmp_img[:,int(img_data['bboxes'][id_overlap]['azimuth']),:] = [255,0,0]
+					tmp_img[:,new_azimuth[tt],:] = [0,255,0]
+
+					imgs = [Image.fromarray(img_t.astype('uint8')), Image.fromarray(tmp_img.astype('uint8'))]
+					# imgs    = [ im, a]
+					# pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
+					min_shape = sorted([i.size for i in imgs])[1][0]
+					imgs_comb = []
+					for ii in range(len(imgs)):
+						imgs_comb.append(imgs[ii].resize([360, imgs[ii].size[1]]))
+					imgs_comb = np.vstack((imgs_comb[0], imgs_comb[1]))
+					imgs_comb = Image.fromarray(imgs_comb)
+					plt.imshow(imgs_comb)
+					plt.yticks([])
+					plt.show()
+
+					# fig = plt.figure()
 					# prob1 = new_total[tt,:]
 					# az_real = 0
-					# fig = plt.figure()
-					# plt.subplot(211)
+					# plt.subplot(311)
 					# img_t = copy.deepcopy(img)
 					# plt.title('image {} cls {}'.format(idx,key))
 					# (x1, y1, x2, y2) = new_boxes[tt, :]
@@ -547,61 +581,29 @@ if not(test_From_File):
 					# 	int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
 					# # im.show()
 					# img_t = img_t[:, :, (2, 1, 0)]
-
-					# prob_3= np.expand_dims(softmax(prob_az[key][idx_az[tt][-1]]),axis =2)
-					# tmp_img = np.tile(tmp_img,[10,1,3])
-					# tmp_img[:,100,:] = [255,0,0]
-					# imgs = [Image.fromarray(img_t.astype('uint8')), Image.fromarray(tmp_img.astype('uint8'))]
-					# # imgs    = [ im, a]
-					# # pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
-					# min_shape = sorted([i.size for i in imgs])[1][0]
-					# imgs_comb = []
-					# for ii in range(len(imgs)):
-					# 	imgs_comb.append(imgs[ii].resize([min_shape, imgs[ii].size[1]]))
-					# imgs_comb = np.vstack((imgs_comb[0], imgs_comb[1]))
-					# imgs_comb = Image.fromarray(imgs_comb)
-					# plt.imshow(imgs_comb)
-					# plt.yticks([])
-					# plt.show()
-
-					fig = plt.figure()
-					prob1 = new_total[tt,:]
-					az_real = 0
-					plt.subplot(311)
-					img_t = copy.deepcopy(img)
-					plt.title('image {} cls {}'.format(idx,key))
-					(x1, y1, x2, y2) = new_boxes[tt, :]
-
-					(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(1 / fx, x1, y1, x2, y2)
-
-					cv2.rectangle(img_t, (real_x1, real_y1), (real_x2, real_y2), (
-						int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
-					# im.show()
-					img_t = img_t[:, :, (2, 1, 0)]
-					im = Image.fromarray(img_t.astype('uint8'), 'RGB')
-					plt.imshow(im)
-					plt.axis('off')
-					# plt.interactive(True)False
-					plt.subplot(312)
-					true180 = (az_real + 180) % 360
-					plt.plot(az_real * np.ones([10, ]), np.linspace(0, prob1[az_real], 10), '-b', label='true azimuth')
-					plt.plot(true180 * np.ones([10, ]), np.linspace(0, prob1[true180], 10), '*b',
-							 label='180 from true azimuth')
-					plt.plot(new_azimuth[tt] * np.ones([10, ]), np.linspace(0, prob1[new_azimuth[tt]], 10), '-r', label='predict azimuth')
-					plt.plot(np.asarray(prob1), '-g')
-					# plt.legend()
-					plt.subplot(313)
-					prob_3= softmax(prob_az[key][idx_az[tt][-1]])
+					# im = Image.fromarray(img_t.astype('uint8'), 'RGB')
+					# plt.imshow(im)
+					# plt.axis('off')
+					# # plt.interactive(True)False
+					# plt.subplot(312)
+					# true180 = (az_real + 180) % 360
+					# plt.plot(az_real * np.ones([10, ]), np.linspace(0, prob1[az_real], 10), '-b', label='true azimuth')
+					# plt.plot(true180 * np.ones([10, ]), np.linspace(0, prob1[true180], 10), '*b',
+					# 		 label='180 from true azimuth')
+					# plt.plot(new_azimuth[tt] * np.ones([10, ]), np.linspace(0, prob1[new_azimuth[tt]], 10), '-r', label='predict azimuth')
+					# plt.plot(np.asarray(prob1), '-g')
+					# # plt.legend()
+					# plt.subplot(313)
+					# prob_3= softmax(prob_az[key][idx_az[tt][-1]])
 					# plt.plot(np.asarray(prob_3), '-g')
-					tmp_img = np.tile(-prob_3,[10,1])
-					fig = plt.imshow(tmp_img, interpolation='nearest')
-					fig.set_cmap('gray')
-					plt.axis('off')
-					plt.plot(150 * np.ones([10, ]), np.linspace(0, 10, 10),'-b')
-					plt.title('predict az {} pedict bin {} predict bin total{}'.format(new_azimuth[tt],discretize(new_azimuth[tt],24),pred2bins(new_total[tt,:])[0]))
-					# plt.title('az_calc {} az pred {}'.format(az_calc, new_azimuth))
-
-					plt.show()
+					# # tmp_img = np.tile(-prob_3,[10,1])
+					# # fig = plt.imshow(tmp_img, interpolation='nearest')
+					# # fig.set_cmap('gray')
+					# # plt.axis('off')
+					# # plt.plot(150 * np.ones([10, ]), np.linspace(0, 10, 10),'-b')
+					# plt.title('predict az {} pedict bin {} predict bin total{}'.format(new_azimuth[tt],discretize(new_azimuth[tt],24),pred2bins(new_total[tt,:])[0]))
+					# # plt.title('az_calc {} az pred {}'.format(az_calc, new_azimuth))
+					# plt.show()
 
 
 			for jk in range(new_boxes.shape[0]):
