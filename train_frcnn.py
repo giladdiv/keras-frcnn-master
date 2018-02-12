@@ -38,14 +38,14 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_FC_syn_based.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_FC_cls_lossweight.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 # parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='./syn_data.pickle' )
-# parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
-parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/syn_data.pickle' )
+parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
+# parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/syn_data.pickle' )
 
-data_type = 'syn'
+data_type = 'real'
 
 (options, args) = parser.parse_args()
 
@@ -244,8 +244,8 @@ for epoch_num in range(num_epochs):
 				rpn_accuracy_for_epoch.append(0)
 				continue
 
-			neg_samples = np.where(Y1[0, :, -1] == 1)
-			pos_samples = np.where(Y1[0, :, -1] == 0)
+			neg_samples = np.where(Y_view[0, :, -1] == 20)
+			pos_samples = np.where(Y_view[0, :, -1] != 20)
 
 			if len(neg_samples) > 0:
 				neg_samples = neg_samples[0]
