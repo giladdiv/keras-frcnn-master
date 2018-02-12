@@ -26,7 +26,7 @@ def timing(f):
 def get_data():
 	base_path = os.getcwd() + '/../VOCdevkit'
 	# data_phase = "test"
-	# cls = "aeroplane"
+	cls = "aeroplane"
 	# base_path = '/home/gilad/ssd/keras-frcnn-master/VOCdevkit'
 	all_imgs = []
 	data_by_cls ={}
@@ -43,7 +43,7 @@ def get_data():
 
 
 	print('Parsing annotation files')
-
+	skip_bbox = 0
 	for data_path in data_paths:
 		# for data_type in ['imagenet','pascal']:
 		for data_type in ['pascal','imagenet']:
@@ -165,6 +165,8 @@ def get_data():
 							obj_view = element_obj['viewpoint']
 							annotation_data['viewpoint_data'] = True
 							if obj_view['distance'] == 0:
+								skip_bbox += 1
+								# print(string)
 								continue
 								az = int(obj_view['azimuth_coarse'])%360
 								el = int(obj_view['elevation'])%360
@@ -236,7 +238,7 @@ def get_data():
 	# # Getting back the objects:
 	# with open('train_data.pickle') as f:  # Python 3: open(..., 'rb')
 	# 	obj0, obj1, obj2 = pickle.load(f)
-
+	print ('skiped {} bboxes'.format(skip_bbox))
 	return all_imgs, classes_count, class_mapping
 	#
 if __name__ == "__main__":
