@@ -26,7 +26,7 @@ def timing(f):
 def get_data():
 	base_path = os.getcwd() + '/../VOCdevkit'
 	# data_phase = "test"
-	cls = "aeroplane"
+	# cls = "aeroplane"
 	# base_path = '/home/gilad/ssd/keras-frcnn-master/VOCdevkit'
 	all_imgs = []
 	data_by_cls ={}
