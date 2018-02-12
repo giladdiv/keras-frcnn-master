@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripmix_fixedsoftmax.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripmix_l2_embd.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -300,7 +300,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'models/model_tripmix_fixedsoftmax_epoch_65.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_FC_init.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -369,34 +369,38 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		view_dp = model_inner([img_input_dp,roi_input_dp])
 		view_dm = model_inner([img_input_dm, roi_input_dm])
 
+		## first version - l2 distance
 
-		# distance_dp = Lambda(euclidean_distance,
-		# 		output_shape=eucl_dist_output_shape)([view_dp, view_ref])
-		#
-		# distance_dm = Lambda(euclidean_distance,
-		# 		output_shape=eucl_dist_output_shape)([view_dm, view_ref])
-		# distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
-		# distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
+		distance_dp = Lambda(euclidean_distance,
+				output_shape=eucl_dist_output_shape)([view_dp, view_ref])
+
+		distance_dm = Lambda(euclidean_distance,
+				output_shape=eucl_dist_output_shape)([view_dm, view_ref])
+		distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
+		distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
+
 		# trip = Lambda(trip_layer, output_shape=[1, 2], name='concat_layer')([distance_dp, distance_dm]) # should be comperd to [0,1] in MSE
-		# model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
-		# model_trip.compile(loss='mse', optimizer=optimizer_trip)
+		trip = Lambda(lambda x: x[0]/(x[1]+K.epsilon()))([distance_dp, distance_dm])
+		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
+		model_trip.compile(loss='mse', optimizer=optimizer_trip)
 
 		## second version for trip distance - cosine distance with softmax
-		cos_dp = Lambda(cosine_distance,
-						output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
 
-		cos_dm = Lambda(cosine_distance,
-						output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
-		# soft_param = K.ones([1,1])*2
-		soft_param = tf.Variable(initial_value=[8.])
-
-		# soft_param = K.repeat(soft_param,2)
-		dist = Concatenate(axis=2)([cos_dm, cos_dp])
-		dist = Lambda(lambda x: x * soft_param)(dist)
-		trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
-		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm], trip)
-		# model_trip.layers[10].trainable_weights.extend([soft_param])
-		model_trip.compile(optimizer=optimizer_trip, loss='categorical_crossentropy')
+		# cos_dp = Lambda(cosine_distance,
+		# 				output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
+        #
+		# cos_dm = Lambda(cosine_distance,
+		# 				output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
+		# # soft_param = K.ones([1,1])*2
+		# soft_param = tf.Variable(initial_value=[8.])
+        #
+		# # soft_param = K.repeat(soft_param,2)
+		# dist = Concatenate(axis=2)([cos_dm, cos_dp])
+		# dist = Lambda(lambda x: x * soft_param)(dist)
+		# trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
+		# model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm], trip)
+		# # model_trip.layers[10].trainable_weights.extend([soft_param])
+		# model_trip.compile(optimizer=optimizer_trip, loss='categorical_crossentropy')
 
 		return model_rpn, model_classifier, model_all, model_inner, model_trip
 
@@ -485,17 +489,6 @@ def generate_data_trip(img_data, C, backend,draw_flag = False):
 	return X,R,Y_view
 
 
-def prep_siam(img,C):
-	X,ratio= img_helpers.format_img(img,C)
-	X = np.transpose(X, (0, 2, 3, 1))
-	P_rpn = model_rpn.predict_on_batch(X)
-	R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], C, K.image_dim_ordering(), use_regr=True, overlap_thresh=0.7,
-								 max_boxes=300)
-	R[:, 2] -= R[:, 0]
-	R[:, 3] -= R[:, 1]
-	return X,R,ratio
-
-
 def calc_roi_siam(Im,R,X,title_id):
 	bboxes = {}
 	probs = {}
@@ -525,8 +518,6 @@ def calc_roi_siam(Im,R,X,title_id):
 			cls_num = np.argmax(P_cls[0, ii, :])
 			cls_name = class_mapping_inv[cls_num]
 			cls_view = P_view[0, ii, 360 * cls_num:360 * (cls_num + 1)]
-			# if cls_name == cls_name_gt:
-			# 	print(np.argmax(cls_view,axis=0))
 			if cls_name not in bboxes:
 				bboxes[cls_name] = []
 				probs[cls_name] = []
@@ -560,7 +551,7 @@ def calc_roi_siam(Im,R,X,title_id):
 
 	return bbox,prob,azimuth,idx
 
-func_k = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm],[model_trip.layers[10].input,model_trip.layers[10].output])
+# func_k = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm],[model_trip.layers[10].input,model_trip.layers[10].output])
 
 for epoch_num in range(num_epochs):
 
@@ -699,14 +690,15 @@ for epoch_num in range(num_epochs):
 				small_bw = 5
 				if epoch_num < 30:
 					big_bw = 90
+					ind_normal = np.random.normal(10, 20, 1)
 				else:
 					big_bw = 15
+					ind_normal = np.random.normal(0, 3, 1)
 				if data_type == 'real':
 					while check_flag:
 						try:
 							az = np.random.randint(0,359)
 							az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
-							ind_normal = np.random.normal(0,3,1)
 							az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal)))%360
 							data_ref = trip_data[rand_cls][az][np.random.randint(0,len(trip_data[rand_cls][az]))]
 							data_dp = trip_data[rand_cls][az_dp][np.random.randint(0,len(trip_data[rand_cls][az_dp]))]
@@ -756,13 +748,19 @@ for epoch_num in range(num_epochs):
 
 				if iter_num % 5*C.siam_iter_frequancy == 0:
 					loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
-					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
+					## cosine version
+					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
+					## l2 distance
+					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([[0]]))
 					loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
 					print('\n')
 					print('class {} loss before {} loss after{}'.format(rand_cls, np.mean(loss_before, axis=1),
 																		np.mean(loss_after, axis=1)))
 				else:
-					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
+					## cosine versio
+					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
+					# l2 distance
+					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([[0]]))
 
 
 				model_inner.save_weights(weight_path_tmp)
