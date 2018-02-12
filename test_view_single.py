@@ -212,13 +212,19 @@ def pred2bins(az_pred):
 bbox_threshold = 0.7
 rgb = False
 #### open images from folder
+def top_n_indexes(arr, n):
+	id = np.argsort(arr)[-n:]
+	val = arr[id]
+	return id,val
 
-# for idx, img_name in enumerate(sorted(os.listdir(img_path))):
-# 	if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
-# 		continue
-# 	print(img_name)
-# 	filepath = os.path.join(img_path,img_name)
-# 	img = cv2.imread(filepath)
+visualize = True
+save_flag = False
+for idx, img_name in enumerate(sorted(os.listdir(img_path))):
+	if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
+		continue
+	print(img_name)
+	filepath = os.path.join(img_path,img_name)
+	img = cv2.imread(filepath)
 
 #### open images from file
 
@@ -237,37 +243,34 @@ rgb = False
 # 	# filepath = os.path.join(tmp_str, 'JPEGImages', string[1])
 # 	img = cv2.imread(filepath)
 
-def top_n_indexes(arr, n):
-	id = np.argsort(arr)[-n:]
-	val = arr[id]
-	return id,val
+
 
 ### open images from video
-visualize = False
-save_flag = True
-obj_name = 'car'
-file_name = '{}5_30'.format(obj_name)
-video_filename = 'video/{}.mp4'.format(file_name)
-result_folder = 'results_imgs/{}'.format(file_name)
-if not(os.path.exists(result_folder)):
-	os.mkdir(result_folder)
-vid = imageio.get_reader(video_filename, 'ffmpeg')
-rgb = True
-start_frame = 300
-end_frame = vid._meta['nframes'] - 30
-for num in range(start_frame ,end_frame,10):
-	# num =
-	img = vid.get_data(num)
-	# img = cv2.flip(vid.get_data(num),1)
-#
+# visualize = False
+# save_flag = True
+# obj_name = 'bicycle'
+# file_name = '{}1_200'.format(obj_name)
+# video_filename = 'video/{}.mp4'.format(file_name)
+# result_folder = 'results_imgs/{}'.format(file_name)
+# if not(os.path.exists(result_folder)):
+# 	os.mkdir(result_folder)
+# vid = imageio.get_reader(video_filename, 'ffmpeg')
+# rgb = True
+# start_frame = 150
+# end_frame = vid._meta['nframes'] - 30
+# for num in range(start_frame ,end_frame,10):
+# 	# num =
+# 	img = vid.get_data(num)
+# 	# img = cv2.flip(vid.get_data(num),1)
+# #
 
 	if img is None:
 		not_good += 1
 		continue
 	else:
 		good_img += 1
-	if good_img%50 == 0:
-		print ('created {}/{} images'.format(good_img,end_frame-start_frame))
+	# if good_img%50 == 0:
+		# print ('created {}/{} images'.format(good_img,end_frame-start_frame))
 	X, ratio = format_img(img, C,rgb=rgb)
 
 	if K.image_dim_ordering() == 'tf':
@@ -343,8 +346,8 @@ for num in range(start_frame ,end_frame,10):
 	all_dets = []
 
 	for key in bboxes:
-		if not(key == obj_name):
-			continue
+		# if not(key == obj_name):
+		# 	continue
 		bbox = np.array(bboxes[key])
 		prob_array = np.array(probs[key])
 		azimuth = np.array(azimuths[key])
@@ -393,44 +396,77 @@ for num in range(start_frame ,end_frame,10):
 	# print(all_dets)
 
 	if visualize:
-		# img1 = img[:,:,(2,1,0)]
+		img = img[:,:,(2,1,0)]
 		# img1=img
-		# im  = Image.fromarray(img1.astype('uint8'),'RGB')
-		# im.show()
+		obj_name = 'aeroplane'
 		prob1 = prob[obj_name][-2]
-		id,val =  top_n_indexes(prob1,5)
-		az_real = 0
-		fig = plt.figure()
-		plt.subplot(211)
-		plt.title('image {}'.format(num))
-		im = Image.fromarray(img.astype('uint8'), 'RGB')
-		# im.show()
-		plt.imshow(im)
-		# plt.interactive(True)False
-		plt.subplot(212)
-		true180 = (az_real + 180) % 360
-		plt.plot(az_real * np.ones([10, ]), np.linspace(0, prob1[az_real], 10), '-b', label='true azimuth')
-		plt.plot(true180 * np.ones([10, ]), np.linspace(0, prob1[true180], 10), '*b', label='180 from true azimuth')
-		plt.plot(new_az * np.ones([10, ]), np.linspace(0, prob1[new_az], 10), '-r', label='predict azimuth')
-		plt.plot(np.asarray(prob1), '-g')
-		# plt.legend()
-		plt.title('az_calc {} az pred {}'.format(az_calc,new_az))
-		# plt.title(
-		# 	'true %s,pred %s ,pred_lr %s error is %s and its %s' % (
-		# 	az_real, az_prob_orig, az_prob_lr, ang_err[0], status_name))
-		plt.show()
+		tmp_img = np.expand_dims(prob1, axis=2)
+		tmp_img = tmp_img - min(tmp_img)
+		tmp_img = 255 - tmp_img / max(tmp_img) * 255
+		tmp_img = np.tile(tmp_img, [30, 1, 3])
+		tmp_img[:, new_az[0], :] = [0, 255, 0]
+
+		imgs = [Image.fromarray(img.astype('uint8')), Image.fromarray(tmp_img.astype('uint8'))]
+		# imgs    = [ im, a]
+		# pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
+		min_shape = sorted([i.size for i in imgs])[1][0]
+		imgs_comb = []
+		for ii in range(len(imgs)):
+		   imgs_comb.append(imgs[ii].resize([min_shape, imgs[ii].size[1]]))
+		imgs_comb = np.vstack((imgs_comb[0], imgs_comb[1]))
+		im  = Image.fromarray(imgs_comb.astype('uint8'),'RGB')
+		# im  = Image.fromarray(img.astype('uint8'),'RGB')
+		im.show()
+		# prob1 = prob[obj_name][-2]
+		# id,val =  top_n_indexes(prob1,5)
+		# az_real = 0
+		# fig = plt.figure()
+		# plt.subplot(211)
+		# plt.title('image {}'.format(num))
+		# im = Image.fromarray(img.astype('uint8'), 'RGB')
+		# # im.show()
+		# plt.imshow(im)
+		# # plt.interactive(True)False
+		# plt.subplot(212)
+		# true180 = (az_real + 180) % 360
+		# plt.plot(az_real * np.ones([10, ]), np.linspace(0, prob1[az_real], 10), '-b', label='true azimuth')
+		# plt.plot(true180 * np.ones([10, ]), np.linspace(0, prob1[true180], 10), '*b', label='180 from true azimuth')
+		# plt.plot(new_az * np.ones([10, ]), np.linspace(0, prob1[new_az], 10), '-r', label='predict azimuth')
+		# plt.plot(np.asarray(prob1), '-g')
+		# # plt.legend()
+		# plt.title('az_calc {} az pred {}'.format(az_calc,new_az))
+		# # plt.title(
+		# # 	'true %s,pred %s ,pred_lr %s error is %s and its %s' % (
+		# # 	az_real, az_prob_orig, az_prob_lr, ang_err[0], status_name))
+		# plt.show()
 
 
 	# cv2.imshow('img', img)
 	# cv2.waitKey(0)
-	if save_flag:
-	   # cv2.imwrite('./results_imgs/{}'.format(img_name),img)
-	   img = img[:, :, (2, 1, 0)]
-	   cv2.imwrite(result_folder+'/{0:04}.png'.format(num),img)
-		# print('save')
-if save_flag:
-	curr_dir = os.getcwd()
-	print('true count is {} out of {} and {} of them are not good'.format(count,good_img,not_good))
-	matlab_cmd = "addpath('%s'); img2vid('%s','%s',%s);" % (curr_dir,os.path.join(curr_dir,result_folder),os.path.join(curr_dir,'results_imgs/{}'.format(file_name)),15)
-	print matlab_cmd
-	os.system('%s -nodisplay -r "try %s ; catch; end; quit;"' % (g_matlab_executable_path, matlab_cmd))
+# 	if save_flag:
+# 	   # cv2.imwrite('./results_imgs/{}'.format(img_name),img)
+# 	   img = img[:, :, (2, 1, 0)]
+# 	   prob1 = prob[obj_name][-2]
+# 	   tmp_img = np.expand_dims(prob1, axis=2)
+# 	   tmp_img = tmp_img - min(tmp_img)
+# 	   tmp_img = 255 - tmp_img / max(tmp_img) * 255
+# 	   tmp_img = np.tile(tmp_img, [30, 1, 3])
+# 	   tmp_img[:, new_az[0], :] = [0, 255, 0]
+#
+# 	   imgs = [Image.fromarray(img.astype('uint8')), Image.fromarray(tmp_img.astype('uint8'))]
+# 	   # imgs    = [ im, a]
+# 	   # pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
+# 	   min_shape = sorted([i.size for i in imgs])[1][0]
+# 	   imgs_comb = []
+# 	   for ii in range(len(imgs)):
+# 		   imgs_comb.append(imgs[ii].resize([min_shape, imgs[ii].size[1]]))
+# 	   imgs_comb = np.vstack((imgs_comb[0], imgs_comb[1]))
+# 	   # img = Image.fromarray(imgs_comb)
+# 	   cv2.imwrite(result_folder+'/{0:04}.png'.format(num),imgs_comb)
+# 		# print('save')
+# if save_flag:
+# 	curr_dir = os.getcwd()
+# 	print('true count is {} out of {} and {} of them are not good'.format(count,good_img,not_good))
+# 	matlab_cmd = "addpath('%s'); img2vid('%s','%s',%s);" % (curr_dir,os.path.join(curr_dir,result_folder),os.path.join(curr_dir,'results_imgs/{}'.format(file_name)),15)
+# 	print matlab_cmd
+# 	os.system('%s -nodisplay -r "try %s ; catch; end; quit;"' % (g_matlab_executable_path, matlab_cmd))

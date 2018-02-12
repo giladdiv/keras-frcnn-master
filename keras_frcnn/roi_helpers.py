@@ -559,7 +559,59 @@ def overlap_mAVP(boxes,pred_bbox):
 	return overlap
 
 
+def overlap_display(boxes,gt_bbox,ratio=1):
+	# code used from here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
+	# if there are no boxes, return an empty list
+	if len(boxes) == 0:
+		return []
 
+	# grab the coordinates of the bounding boxes
+	x1,x2,y1,y2 = [],[],[],[]
+	for box in boxes:
+		x1.append(float(box['x1']))
+		x2.append(float(box['x2']))
+		y1.append(float(box['y1']))
+		y2.append(float(box['y2']))
+	x1_gt,y1_gt,x2_gt,y2_gt =  np.array(gt_bbox)
+	x1,x2,y1,y2 = np.array(x1),np.array(x2),np.array(y1),np.array(y2)
+	np.testing.assert_array_less(x1, x2)
+	np.testing.assert_array_less(y1, y2)
+
+	# if the bounding boxes integers, convert them to floats --
+	# this is important since we'll be doing a bunch of divisions
+
+
+	# initialize the list of picked indexes
+	pick = []
+
+	# calculate the areas
+	area = (x2 - x1) * (y2 - y1)
+	area_gt = (x2_gt - x1_gt) * (y2_gt - y1_gt)
+	# sort the bounding boxes
+
+
+
+	xx1_int = np.maximum(x1_gt, x1)
+	yy1_int = np.maximum(y1_gt, y1)
+	xx2_int = np.minimum(x2_gt, x2)
+	yy2_int = np.minimum(y2_gt, y2)
+    #
+	ww_int = np.maximum(0, xx2_int - xx1_int)
+	hh_int = np.maximum(0, yy2_int - yy1_int)
+    #
+	area_int = ww_int * hh_int
+    #
+	# # find the union
+	area_union = area_gt + area - area_int
+    #
+	# # compute the ratio of overlap
+	overlap = area_int/(area_union + 1e-6)
+    #
+	# good_idx = np.where(overlap > overlap_thresh)[0]
+	# pick = idxs[good_idx]
+
+
+	return np.argmax(overlap)
 
 
 def overlap_with_gt(boxes, probs,azimuth,gt_bbox,ratio=1, overlap_thresh=0.9, max_boxes=300,use_az = False,return_overlap = False):
