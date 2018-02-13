@@ -295,12 +295,12 @@ feature_input_dm = Input(shape=(None,None,1024))
 
 optimizer = Adam(lr=1e-5)
 optimizer_classifier = Adam(lr=1e-5)
-optimizer_trip = Adam(lr=1e-4)
+optimizer_trip = Adam(lr=1e-5)
 rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'models/model_FC_init.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_tripmix_l2_embd_epoch_25.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -688,12 +688,14 @@ for epoch_num in range(num_epochs):
 
 				check_flag = True
 				small_bw = 5
-				if epoch_num < 30:
+				if epoch_num < 40:
 					big_bw = 90
 					ind_normal = np.random.normal(10, 20, 1)
+				elif epoch_num < 60:
+					ind_normal = np.random.normal(10, 10, 1)
 				else:
 					big_bw = 15
-					ind_normal = np.random.normal(0, 3, 1)
+					ind_normal = np.random.normal(0, 1, 1)
 				if data_type == 'real':
 					while check_flag:
 						try:
