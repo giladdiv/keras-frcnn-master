@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripmix_cosine_lastlayer.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripcombine_l2_lastlayer.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -300,7 +300,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'models/model_FC_init.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_tripmix_l2_embd_epoch_35.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -369,24 +369,27 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		inner_ref = model_inner([img_input_ref,roi_input_ref])
 		inner_dp = model_inner([img_input_dp,roi_input_dp])
 		inner_dm = model_inner([img_input_dm, roi_input_dm])
-		view_ref = model_view_only([img_input_ref,roi_input_ref])
-		view_dp = model_view_only([img_input_dp,roi_input_dp])
-		view_dm = model_view_only([img_input_dm, roi_input_dm])
+		view_ref_base = model_view_only([img_input_ref,roi_input_ref])
+		view_dp_base = model_view_only([img_input_dp,roi_input_dp])
+		view_dm_base = model_view_only([img_input_dm, roi_input_dm])
 
 		## first version - l2 distance
 
-		# distance_dp = Lambda(euclidean_distance,
-		# 		output_shape=eucl_dist_output_shape)([inner_dp, inner_ref])
-        #
-		# distance_dm = Lambda(euclidean_distance,
-		# 		output_shape=eucl_dist_output_shape)([inner_dm, inner_ref])
-		# distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
-		# distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
-        #
-		# # trip = Lambda(trip_layer, output_shape=[1, 2], name='concat_layer')([distance_dp, distance_dm]) # should be comperd to [0,1] in MSE
-		# trip = Lambda(lambda x: x[0]/(x[1]+K.epsilon()))([distance_dp, distance_dm])
-		# model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
-		# model_trip.compile(loss='mse', optimizer=optimizer_trip)
+		view_ref = SliceTensor(len(class_mapping),C.num_rois)([view_ref_base,labels_input])
+		view_dp = SliceTensor(len(class_mapping),C.num_rois)([view_dp_base,labels_input])
+		view_dm = SliceTensor(len(class_mapping),C.num_rois)([view_dm_base,labels_input])
+
+		distance_dp = Lambda(euclidean_distance,
+				output_shape=eucl_dist_output_shape)([view_dp, view_ref])
+
+		distance_dm = Lambda(euclidean_distance,
+				output_shape=eucl_dist_output_shape)([view_dm, view_ref])
+		distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
+		distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
+
+		# trip = Lambda(trip_layer, output_shape=[1, 2], name='concat_layer')([distance_dp, distance_dm]) # should be comperd to [0,1] in MSE
+		trip = Lambda(lambda x: x[0]/(x[1]+K.epsilon()))([distance_dp, distance_dm])
+
 
 		## second version for trip distance - cosine distance with softmax
 		# cos_dp = Lambda(cosine_distance,
@@ -407,41 +410,41 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 
 		## third version cosine on last layer
 		# slice the currect 360 slice
-		view_ref = SliceTensor(len(class_mapping),C.num_rois)([view_ref,labels_input])
-		view_dp = SliceTensor(len(class_mapping),C.num_rois)([view_dp,labels_input])
-		view_dm = SliceTensor(len(class_mapping),C.num_rois)([view_dm,labels_input])
+		# view_ref = SliceTensor(len(class_mapping),C.num_rois)([view_ref,labels_input])
+		# view_dp = SliceTensor(len(class_mapping),C.num_rois)([view_dp,labels_input])
+		# view_dm = SliceTensor(len(class_mapping),C.num_rois)([view_dm,labels_input])
+        #
+		# # l2 normlize in order to use cosine dist
+		# view_ref = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_ref)
+		# view_dp = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dp)
+		# view_dm = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dm)
+        #
+        #
+		# cos_dp = Lambda(cosine_distance,
+		# 				output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
+        #
+		# cos_dm = Lambda(cosine_distance,
+		# 				output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
+		# # soft_param = K.ones([1,1])*2
+		# soft_param = tf.Variable(initial_value=[8.])
+        #
+		# # soft_param = K.repeat(soft_param,2)
+		# dist = Concatenate(axis=2)([cos_dm, cos_dp])
+		# dist = Lambda(lambda x: x * soft_param)(dist)
+		# trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
 
-		# l2 normlize in order to use cosine dist
-		view_ref = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_ref)
-		view_dp = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dp)
-		view_dm = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dm)
 
 
-		cos_dp = Lambda(cosine_distance,
-						output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
-
-		cos_dm = Lambda(cosine_distance,
-						output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
-		# soft_param = K.ones([1,1])*2
-		soft_param = tf.Variable(initial_value=[8.])
-
-		# soft_param = K.repeat(soft_param,2)
-		dist = Concatenate(axis=2)([cos_dm, cos_dp])
-		dist = Lambda(lambda x: x * soft_param)(dist)
-		trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
-
-
-
-		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm,labels_input], [view_ref,view_dp,view_dm,trip])
+		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm,labels_input], [view_ref_base,trip])
 		# model_trip.layers[10].trainable_weights.extend([soft_param])
 
 		## cosine
-		model_trip.compile(optimizer=optimizer_trip, loss=[losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),'categorical_crossentropy'])
+		# model_trip.compile(optimizer=optimizer_trip, loss=[losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),'categorical_crossentropy'])
 
 		## l2
-		# model_trip.compile(optimizer=optimizer_trip, loss=[losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),'mse'])
+		model_trip.compile(optimizer=optimizer_trip, loss=[losses.class_loss_view_weight(C.num_classes,roi_num=C.num_rois),'mse'])
 
-		return model_rpn, model_classifier, model_all, model_inner, model_trip
+		return model_view_only, model_inner, model_trip
 
 	else:
 		return model_rpn, model_classifier, model_all
@@ -471,7 +474,7 @@ model_rpn,model_classifier,model_all = build_models(weight_path=weight_path_init
 # 		jj+=1
 
 model_all.save_weights(weight_path_tmp)
-_,_,_,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
+model_view_only,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
 ## get layers
 # test_view_func(C, model_rpn, model_classifier)
 # classifier_not_trainable_layers = [i for i,x in enumerate(model_classifier.layers) if x.trainable == False]
@@ -600,242 +603,153 @@ for epoch_num in range(num_epochs):
 	while True:
 		# t_start = time.time()
 		try:
-			if len(rpn_accuracy_rpn_monitor) == epoch_length and C.verbose:
-				mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor))/len(rpn_accuracy_rpn_monitor)
-				rpn_accuracy_rpn_monitor = []
-				print('Average number of overlapping bounding boxes from RPN = {} for {} previous iterations'.format(mean_overlapping_bboxes, epoch_length))
-				if mean_overlapping_bboxes == 0:
-					print('RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
+			## choose trip
+			rand_cls = trip_cls[np.random.randint(len(trip_cls))]
+			# rand_cls = 'aeroplane'
+			cls_input = class_mapping[rand_cls]
 
-			X, Y, img_data = next(data_gen_train)
+			## old triple choose
+			# len_data = len(trip_data[rand_cls])
+			# ind_ref = random.randint(0,len_data-2)
+			# dev_num = np.random.randint(4,9)
+			# ind_dm = int(ind_ref+len_data/dev_num) if ind_ref+len_data/dev_num < len_data-1 else int(ind_ref-len_data/dev_num)
+			# data_ref = trip_data[rand_cls][ind_ref]
+			# data_dm = trip_data[rand_cls][ind_dm]
+			# data_dp = trip_data[rand_cls][ind_ref+1]
 
-			# loss_rpn = model_rpn.train_on_batch(X, Y)
-
-
-			P_rpn = model_rpn.predict_on_batch(X)
-
-			R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], C, K.image_dim_ordering(), use_regr=True, overlap_thresh=0.7, max_boxes=300)
-
-			# note: calc_iou converts from (x1,y1,x2,y2) to (x,y,w,h) format
-			X2, Y1, Y2, Y_view = roi_helpers.calc_iou_new(R, img_data, C, class_mapping)
-
-
-			if X2 is None:
-				rpn_accuracy_rpn_monitor.append(0)
-				rpn_accuracy_for_epoch.append(0)
-				continue
-
-			neg_samples = np.where(Y_view[0, :, -1] == 20)
-			pos_samples = np.where(Y_view[0, :, -1] != 20)
-
-			if len(neg_samples) > 0:
-				neg_samples = neg_samples[0]
+			check_flag = True
+			small_bw = 5
+			if epoch_num < 40:
+				big_bw = 90
+				ind_normal = np.random.normal(10, 20, 1)
+			elif epoch_num < 80:
+				big_bw = 60
+				ind_normal = np.random.normal(10, 10, 1)
 			else:
-				neg_samples = []
-
-			if len(pos_samples) > 0:
-				pos_samples = pos_samples[0]
+				big_bw = 15
+				ind_normal = np.random.normal(0, 1, 1)
+			if data_type == 'real':
+				while check_flag:
+					try:
+						az = np.random.randint(0, 359)
+						az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
+						az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal))) % 360
+						data_ref = trip_data[rand_cls][az][np.random.randint(0, len(trip_data[rand_cls][az]))]
+						data_dp = trip_data[rand_cls][az_dp][np.random.randint(0, len(trip_data[rand_cls][az_dp]))]
+						dm_idx = np.random.randint(0, len(trip_data[rand_cls][az_dm]))
+						data_dm = trip_data[rand_cls][az_dm][dm_idx]
+						if (len(data_dm['bboxes']) != 1) or (len(data_dp['bboxes']) != 1) or (
+								len(data_ref['bboxes']) != 1):
+							check_flag = True
+						else:
+							check_flag = False
+					# data_dm2 = trip_data[rand_cls][az_dm][(dm_idx+1)%len(trip_data[rand_cls][az_dm])]
+					except:
+						check_flag = True
 			else:
-				pos_samples = []
+				while check_flag:
+					try:
+						folder = np.random.randint(1, len(trip_data[rand_cls]) + 1)
+						az = np.random.randint(0, 359)
+						az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
+						ind_normal = np.random.normal(0, 20, 1)
+						az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal))) % 360
+						data_ref = trip_data[rand_cls][folder][az][
+							np.random.randint(0, len(trip_data[rand_cls][folder][az]))]
+						data_dp = trip_data[rand_cls][folder][az_dp][
+							np.random.randint(0, len(trip_data[rand_cls][folder][az_dp]))]
+						data_dm = trip_data[rand_cls][folder][az_dm][
+							np.random.randint(0, len(trip_data[rand_cls][folder][az_dm]))]
+						if (len(data_dm['bboxes']) != 1) or (len(data_dp['bboxes']) != 1) or (
+								len(data_ref['bboxes']) != 1):
+							check_flag = True
+						else:
+							check_flag = False
+					except:
+						check_flag = True
+			## load 3 images with
+			model_classifier.save_weights(weight_path_tmp)
+			model_inner.load_weights(weight_path_tmp, by_name=True)
+			X_ref, R_ref, Y_ref = generate_data_trip(data_ref, C, K.image_dim_ordering())
+			X_dm, R_dm, Y_dm = generate_data_trip(data_dm, C, K.image_dim_ordering())
+			X_dp, R_dp, Y_dp = generate_data_trip(data_dp, C, K.image_dim_ordering())
+			# cls_input = class_mapping[rand_cls]
 
-			rpn_accuracy_rpn_monitor.append(len(pos_samples))
-			rpn_accuracy_for_epoch.append((len(pos_samples)))
+			## dispaly images
+			# im_r = Image.fromarray(img_R.astype('uint8'), 'RGB')
+			# im_r.show()
+			# im_l = Image.fromarray(img_L.astype('uint8'), 'RGB')
+			# im_l.show()
 
-			if C.num_rois > 1:
-				if len(pos_samples) < C.num_rois//2:
-					selected_pos_samples = pos_samples.tolist()
-				else:
-					selected_pos_samples = np.random.choice(pos_samples, C.num_rois//2, replace=False).tolist()
-				try:
-					selected_neg_samples = np.random.choice(neg_samples, C.num_rois - len(selected_pos_samples), replace=False).tolist()
-				except:
-					selected_neg_samples = np.random.choice(neg_samples, C.num_rois - len(selected_pos_samples), replace=True).tolist()
+			# kfun = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm],[model_trip.layers[8].input[0],model_trip.layers[8].input[1],model_trip.layers[8].output])
+			# kfun([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
 
-				sel_samples = selected_pos_samples + selected_neg_samples
-			else:
-				# in the extreme case where num_rois = 1, we pick a random pos or neg sample
-				selected_pos_samples = pos_samples.tolist()
-				selected_neg_samples = neg_samples.tolist()
-				if np.random.randint(0, 2):
-					sel_samples = random.choice(neg_samples)
-				else:
-					sel_samples = random.choice(pos_samples)
+			# if iter_num % 5 * C.siam_iter_frequancy == 0:
+			# 	## cosine version -last layer
+			# 	loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref])
+			# 	## other versions
+			# 	# loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
+            #
+			# 	## cosine version -last layer
+			# 	# loss_class =model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref],
+			# 	# 						  [Y_ref, Y_dp, Y_dm, np.array([np.tile([0, 1], (32, 1))])])
+			# 	## cosine version - embd
+			# 	# loss_class =model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref], [Y_ref,Y_dp,Y_dm,np.array([np.tile([0,1],(32,1))])])
+			# 	## l2 distance
+			# 	loss_class =model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref], [Y_ref,Y_dp,Y_dm,np.array([[0]])])
+            #
+			# 	## cosine version -last layer
+			# 	loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref])
+			# 	## other versions
+			# 	# loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
+            #
+			# 	print('\n')
+			# 	print('class {} loss before {} loss after{}'.format(rand_cls, np.mean(loss_before, axis=1),
+			# 														np.mean(loss_after, axis=1)))
+			# else:
+			## cosine version -last layer
+			# loss_class = model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref],
+			# 						  [Y_ref, Y_dp, Y_dm, np.array([np.tile([0, 1], (32, 1))])])
+			## cosine version - embd
+			# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref], [Y_ref,Y_dp,Y_dm,np.array([np.tile([0,1],(32,1))])])
+			## l2 distance
+			loss_class = model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm, Y_ref], [Y_ref,np.array([[0]])])
 
-			numNonBg = C.num_rois-np.sum(np.argmax(Y1[:, sel_samples, :],axis=2)==20)
-			countNum += numNonBg
-			ang = np.max(np.argmax(Y_view[:, sel_samples, :][0,:,:360],axis=1))
-			# loss_class = [0,0,0,0,0,0,0]
-			loss_class = model_classifier.train_on_batch([X, X2[:, sel_samples, :]], [Y1[:, sel_samples, :], Y2[:, sel_samples, :],Y_view[:, sel_samples, :]])
-			if iter_num%500 == 0 and numNonBg !=0:
-				out_cls,out_reg,out_az = model_classifier.predict([X, X2[:, sel_samples, :]])
-				gt_label = np.argmax(Y1[:, sel_samples, :],axis=2)
-				gt_az = np.argmax(Y_view[:, sel_samples, :][0,:,:360],axis=1)
+
+			if iter_num%500 == 0 :
+				model_view_only.save_weights(weight_path_tmp)
+				model_classifier.load_weights(weight_path_tmp,by_name=True)
+				out_cls,out_reg,out_az = model_classifier.predict([X_ref, R_ref])
+				gt_label = Y_ref[0,:,-1]
+				gt_az = np.argmax(Y_ref[0,:,:360],axis=1)
 				az = []
 				true_az = []
 				cls = []
 				true_cls =[]
-				for ind in range(C.num_rois):
-					if gt_label[0,ind]!=20:
-						az.append(np.argmax(out_az[0,ind,360*gt_label[0,ind]:360*(gt_label[0,ind]+1)],axis=0))
+				for ind in range(15):
+					if gt_label[ind]!=20:
+						az.append(np.argmax(out_az[0,ind,360*int(gt_label[ind]):360*(int(gt_label[ind])+1)],axis=0))
 						true_az.append(gt_az[ind])
 						cls.append(np.argmax(out_cls[0,ind,:],axis=0))
-						true_cls.append(gt_label[0,ind])
+						true_cls.append(int(gt_label[ind]))
 				print('\n')
 				print('true cls {} \n estimated cls {}'.format(true_cls,cls))
 				print('true az {} \n estimated az {}'.format(true_az,az))
 			losses[iter_num, 0] = 0
 			losses[iter_num, 1] = 0
-			# losses[iter_num, 0] = loss_rpn[1]
-			# losses[iter_num, 1] = loss_rpn[2]
-			losses[iter_num, 2] = loss_class[1]
-			losses[iter_num, 3] = loss_class[2]
-			losses[iter_num, 4] = loss_class[3]
-			losses[iter_num, 5] = loss_class[4]
+			losses[iter_num, 2] = 0
+			losses[iter_num, 3] = 0
+			losses[iter_num, 4] = loss_class[1]
+			losses[iter_num, 5] = loss_class[2]
 			# losses[iter_num, 4] = loss_class[0]
 			# weight_t= np.mean(model_classifier.layers[39].get_weights()[0])
 			iter_num += 1
-			progbar.update(iter_num, [('view_cls', losses[:iter_num, 4].sum(0)/(losses[:iter_num, 4]!=0).sum(0)),('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
-									  ('detector_cls', np.mean(losses[:iter_num, 2])), ('detector_regr', np.mean(losses[:iter_num, 3]))])
+			progbar.update(iter_num, [('view_ref',loss_class[1]),('dist',loss_class[2])])
 			# progbar.update(iter_num, [('view_cls', losses[:iter_num, 4].sum(0)/(losses[:iter_num, 4]!=0).sum(0))])
 				# print('iter time {}'.format(time.time()-t_start))
 
-			## siam block
-			global im_id
-			im_id = 0
 
-			def add_id():
-				global im_id
-				im_id+=1
-				return im_id
-
-
-			trip_flag = True
-			if trip_flag and iter_num % C.siam_iter_frequancy == 0:
-				## choose trip
-				rand_cls =trip_cls[np.random.randint(len(trip_cls))]
-				# rand_cls = 'aeroplane'
-				cls_input = class_mapping[rand_cls]
-
-				## old triple choose
-				# len_data = len(trip_data[rand_cls])
-				# ind_ref = random.randint(0,len_data-2)
-				# dev_num = np.random.randint(4,9)
-				# ind_dm = int(ind_ref+len_data/dev_num) if ind_ref+len_data/dev_num < len_data-1 else int(ind_ref-len_data/dev_num)
-				# data_ref = trip_data[rand_cls][ind_ref]
-				# data_dm = trip_data[rand_cls][ind_dm]
-				# data_dp = trip_data[rand_cls][ind_ref+1]
-
-				check_flag = True
-				small_bw = 5
-				if epoch_num < 40:
-					big_bw = 90
-					ind_normal = np.random.normal(10, 20, 1)
-				elif epoch_num < 80:
-					big_bw = 60
-					ind_normal = np.random.normal(10, 10, 1)
-				else:
-					big_bw = 15
-					ind_normal = np.random.normal(0, 1, 1)
-				if data_type == 'real':
-					while check_flag:
-						try:
-							az = np.random.randint(0,359)
-							az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
-							az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal)))%360
-							data_ref = trip_data[rand_cls][az][np.random.randint(0,len(trip_data[rand_cls][az]))]
-							data_dp = trip_data[rand_cls][az_dp][np.random.randint(0,len(trip_data[rand_cls][az_dp]))]
-							dm_idx = np.random.randint(0,len(trip_data[rand_cls][az_dm]))
-							data_dm = trip_data[rand_cls][az_dm][dm_idx]
-							if (len(data_dm['bboxes'])!=1) or (len(data_dp['bboxes'])!=1) or (len(data_ref['bboxes'])!=1):
-								check_flag = True
-							else:
-								check_flag = False
-							# data_dm2 = trip_data[rand_cls][az_dm][(dm_idx+1)%len(trip_data[rand_cls][az_dm])]
-						except:
-							check_flag = True
-				else:
-					while check_flag:
-						try:
-							folder =np.random.randint(1,len(trip_data[rand_cls])+1)
-							az = np.random.randint(0,359)
-							az_dp = np.random.randint(max(0, az - small_bw), min(359, az + small_bw))
-							ind_normal = np.random.normal(0,20,1)
-							az_dm = int(az + np.sign(ind_normal) * (big_bw + abs(ind_normal)))%360
-							data_ref = trip_data[rand_cls][folder][az][np.random.randint(0,len(trip_data[rand_cls][folder][az]))]
-							data_dp = trip_data[rand_cls][folder][az_dp][np.random.randint(0,len(trip_data[rand_cls][folder][az_dp]))]
-							data_dm = trip_data[rand_cls][folder][az_dm][np.random.randint(0,len(trip_data[rand_cls][folder][az_dm]))]
-							if (len(data_dm['bboxes'])!=1) or (len(data_dp['bboxes'])!=1) or (len(data_ref['bboxes'])!=1):
-								check_flag = True
-							else:
-								check_flag = False
-						except:
-							check_flag = True
-				## load 3 images with
-				model_classifier.save_weights(weight_path_tmp)
-				model_inner.load_weights(weight_path_tmp,by_name = True)
-				X_ref,R_ref,Y_ref = generate_data_trip(data_ref,C,K.image_dim_ordering())
-				X_dm,R_dm,Y_dm = generate_data_trip(data_dm,C,K.image_dim_ordering())
-				X_dp,R_dp,Y_dp = generate_data_trip(data_dp,C,K.image_dim_ordering())
-				# cls_input = class_mapping[rand_cls]
-
-
-				## dispaly images
-				# im_r = Image.fromarray(img_R.astype('uint8'), 'RGB')
-				# im_r.show()
-				# im_l = Image.fromarray(img_L.astype('uint8'), 'RGB')
-				# im_l.show()
-
-				# kfun = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm],[model_trip.layers[8].input[0],model_trip.layers[8].input[1],model_trip.layers[8].output])
-				# kfun([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
-
-				if iter_num % 5*C.siam_iter_frequancy == 0:
-					## cosine version -last layer
-					loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref])
-					## other versions
-					# loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
-
-
-					## cosine version -last layer
-					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref],[Y_ref,Y_dp,Y_dm,np.array([np.tile([0,1],(32,1))])])
-					## cosine version - embd
-					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], [Y_ref,Y_dp,Y_dm,np.array([np.tile([0,1],(32,1))])])
-					## l2 distance
-					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], [Y_ref,Y_dp,Y_dm,np.np.array([[0]])])
-
-
-					## cosine version -last layer
-					loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref])
-					## other versions
-					# loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
-
-					print('\n')
-					print('class {} loss before {} loss after{}'.format(rand_cls, np.mean(loss_before, axis=1),
-																		np.mean(loss_after, axis=1)))
-				else:
-					## cosine version -last layer
-					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref],[Y_ref,Y_dp,Y_dm,np.array([np.tile([0,1],(32,1))])])
-					## cosine version - embd
-					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], [Y_ref,Y_dp,Y_dm,np.array([np.tile([0,1],(32,1))])])
-					## l2 distance
-					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], [Y_ref,Y_dp,Y_dm,np.np.array([[0]])])
-
-
-				model_inner.save_weights(weight_path_tmp)
-				model_classifier.load_weights(weight_path_tmp,by_name = True)
-
-				# loss_before = model_trip.predict([X_ref,R_ref,X_dp,R_dp,X_dm,R_dm])
-				# view_out_before = model_classifier.predict([X_ref,R_ref])[2]
-				# out_before = np.argmax(view_out_before[0, :len(idx_l), 360 * cls_input:360 * (cls_input + 1)], axis=1)
-                #
-				# model_siam.train_on_batch([X_l,R_l_idx,X_r,R_r_idx],label_siam)
-				# model_view_only.save_weights(weight_path_tmp)
-				# model_classifier.load_weights(weight_path_tmp,by_name = True)
-                #
-				# loss_after = model_siam.predict([X_l, R_l_idx, X_r, R_r_idx])
-				# view_out_after = model_classifier.predict([X_l,R_l_idx])[2]
-				# out_after = np.argmax(view_out_after[0, :len(idx_l), 360 * cls_input:360 * (cls_input + 1)], axis=1)
-
-			if iter_num == epoch_length:
+			if iter_num >= epoch_length:
 				loss_rpn_cls = np.mean(losses[:, 0])
 				loss_rpn_regr = np.mean(losses[:, 1])
 				loss_class_cls = np.mean(losses[:, 2])
@@ -843,11 +757,11 @@ for epoch_num in range(num_epochs):
 				loss_class_view = np.nanmean(np.where(losses[:, 4]!=0,losses[:iter_num, 4],np.nan),0)
 				class_acc = np.mean(losses[:, 5])
 
-				mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
+				# mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
 				rpn_accuracy_for_epoch = []
 
 				if C.verbose:
-					print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(mean_overlapping_bboxes))
+					# print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(mean_overlapping_bboxes))
 					print('Classifier accuracy for bounding boxes from RPN: {}'.format(class_acc))
 					print('Loss RPN classifier: {}'.format(loss_rpn_cls))
 					print('Loss RPN regression: {}'.format(loss_rpn_regr))
@@ -877,6 +791,10 @@ for epoch_num in range(num_epochs):
 				if epoch_num%epoch_save_num == 0 and epoch_num !=0:
 					temp_ind = C.model_path.index(".hdf5")
 					C.model_path_epoch = C.model_path[:temp_ind] + '_epoch_{}'.format(epoch_num) + C.model_path[temp_ind:]
+					## load the current weights
+					model_view_only.save_weights(weight_path_tmp)
+					model_classifier.load_weights(weight_path_tmp, by_name=True)
+
 					tmp_succ,MAP =test_view_func(C, model_rpn, model_classifier)
 					succ_vec[0, int(epoch_num / epoch_save_num)] =tmp_succ
 					# model_view_only.save_weights(weight_path_tmp)
