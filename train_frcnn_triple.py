@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripmix_l2_embd.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_tripmix_l2_lastlayer.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -300,7 +300,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'models/model_tripmix_l2_embd_epoch_25.hdf5')
+weight_path_init = os.path.join(base_path, 'models/model_FC_init.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -364,25 +364,43 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 	if create_siam:
 		model_view_only = Model([img_input, roi_input], classifier[2])
 		model_inner = Model([img_input, roi_input],inner_layer)
+
 		## use the feature map after rpn,train only the view module
-		view_ref = model_inner([img_input_ref,roi_input_ref])
-		view_dp = model_inner([img_input_dp,roi_input_dp])
-		view_dm = model_inner([img_input_dm, roi_input_dm])
+		# inner_ref = model_inner([img_input_ref,roi_input_ref])
+		# inner_dp = model_inner([img_input_dp,roi_input_dp])
+		# inner_dm = model_inner([img_input_dm, roi_input_dm])
+		view_ref = model_view_only([img_input_ref,roi_input_ref])
+		view_dp = model_view_only([img_input_dp,roi_input_dp])
+		view_dm = model_view_only([img_input_dm, roi_input_dm])
+		#
+		# # slice the currect 360 slice
+		view_ref = SliceTensor(len(class_mapping),C.num_rois)([view_ref,labels_input])
+		view_dp = SliceTensor(len(class_mapping),C.num_rois)([view_dp,labels_input])
+		view_dm = SliceTensor(len(class_mapping),C.num_rois)([view_dm,labels_input])
+
 
 		## first version - l2 distance
+		view_ref = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_ref)
+		view_dp = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dp)
+		view_dm = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dm)
+
+		## flat the layers
+		view_ref = Flatten()(view_ref)
+		view_dp = Flatten()(view_dp)
+		view_dm = Flatten()(view_dm)
 
 		distance_dp = Lambda(euclidean_distance,
 				output_shape=eucl_dist_output_shape)([view_dp, view_ref])
 
 		distance_dm = Lambda(euclidean_distance,
 				output_shape=eucl_dist_output_shape)([view_dm, view_ref])
-		distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
-		distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
+		# distance_dp = Lambda(l2_layer,output_shape=l2_layer_output_shape,name='dp_l2_layer')(distance_dp)
+		# distance_dm = Lambda(l2_layer, output_shape=l2_layer_output_shape,name='dm_l2_layer')(distance_dm)
 
 		# trip = Lambda(trip_layer, output_shape=[1, 2], name='concat_layer')([distance_dp, distance_dm]) # should be comperd to [0,1] in MSE
 		trip = Lambda(lambda x: x[0]/(x[1]+K.epsilon()))([distance_dp, distance_dm])
-		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
-		model_trip.compile(loss='mse', optimizer=optimizer_trip)
+		# model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm], trip)
+		# model_trip.compile(loss='mse', optimizer=optimizer_trip)
 
 		## second version for trip distance - cosine distance with softmax
 
@@ -402,7 +420,39 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		# # model_trip.layers[10].trainable_weights.extend([soft_param])
 		# model_trip.compile(optimizer=optimizer_trip, loss='categorical_crossentropy')
 
-		return model_rpn, model_classifier, model_all, model_inner, model_trip
+		## third version cosine on last layer
+		# view_ref = model_view_only([img_input_ref,roi_input_ref])
+		# view_dp = model_view_only([img_input_dp,roi_input_dp])
+		# view_dm = model_view_only([img_input_dm, roi_input_dm])
+        #
+		# # slice the currect 360 slice
+		# view_ref = SliceTensor(len(class_mapping),C.num_rois)([view_ref,labels_input])
+		# view_dp = SliceTensor(len(class_mapping),C.num_rois)([view_dp,labels_input])
+		# view_dm = SliceTensor(len(class_mapping),C.num_rois)([view_dm,labels_input])
+        #
+		# # l2 normlize in order to use cosine dist
+		# view_ref = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_ref)
+		# view_dp = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dp)
+		# view_dm = Lambda(lambda x: tf.nn.l2_normalize(x, dim=2))(view_dm)
+        #
+        #
+		# cos_dp = Lambda(cosine_distance,
+		# 				output_shape=cosine_dist_output_shape)([view_ref, view_dp])  # cosine dist <X_ref,X_dp>
+        #
+		# cos_dm = Lambda(cosine_distance,
+		# 				output_shape=cosine_dist_output_shape)([view_ref, view_dm])  # cosine dist <X_ref,X_dm>
+		# # soft_param = K.ones([1,1])*2
+		# soft_param = tf.Variable(initial_value=[8.])
+        #
+		# # soft_param = K.repeat(soft_param,2)
+		# dist = Concatenate(axis=2)([cos_dm, cos_dp])
+		# dist = Lambda(lambda x: x * soft_param)(dist)
+		# trip = Activation('softmax')(dist)  # should be comperd to [0,1] becase dp shold be small and dm large so after softmax it
+		model_trip = Model([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm,labels_input], trip)
+		# model_trip.layers[10].trainable_weights.extend([soft_param])
+		model_trip.compile(optimizer=optimizer_trip, loss='mse')
+
+		return model_view_only, model_inner, model_trip
 
 	else:
 		return model_rpn, model_classifier, model_all
@@ -432,7 +482,7 @@ model_rpn,model_classifier,model_all = build_models(weight_path=weight_path_init
 # 		jj+=1
 
 model_all.save_weights(weight_path_tmp)
-_,_,_,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
+model_view_only,model_inner,model_trip = build_models(weight_path = weight_path_tmp, init_models = True,create_siam=True, train_view_only = True)
 ## get layers
 # test_view_func(C, model_rpn, model_classifier)
 # classifier_not_trainable_layers = [i for i,x in enumerate(model_classifier.layers) if x.trainable == False]
@@ -551,7 +601,7 @@ def calc_roi_siam(Im,R,X,title_id):
 
 	return bbox,prob,azimuth,idx
 
-# func_k = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm],[model_trip.layers[10].input,model_trip.layers[10].output])
+# func_k = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp, img_input_dm, roi_input_dm,labels_input],[model_trip.layers[10].input,model_trip.layers[10].output])
 
 for epoch_num in range(num_epochs):
 
@@ -691,7 +741,8 @@ for epoch_num in range(num_epochs):
 				if epoch_num < 40:
 					big_bw = 90
 					ind_normal = np.random.normal(10, 20, 1)
-				elif epoch_num < 60:
+				elif epoch_num < 80:
+					big_bw = 60
 					ind_normal = np.random.normal(10, 10, 1)
 				else:
 					big_bw = 15
@@ -732,7 +783,7 @@ for epoch_num in range(num_epochs):
 							check_flag = True
 				## load 3 images with
 				model_classifier.save_weights(weight_path_tmp)
-				model_inner.load_weights(weight_path_tmp,by_name = True)
+				model_view_only.load_weights(weight_path_tmp,by_name = True)
 				X_ref,R_ref,Y_ref = generate_data_trip(data_ref,C,K.image_dim_ordering())
 				X_dm,R_dm,Y_dm = generate_data_trip(data_dm,C,K.image_dim_ordering())
 				X_dp,R_dp,Y_dp = generate_data_trip(data_dp,C,K.image_dim_ordering())
@@ -745,27 +796,42 @@ for epoch_num in range(num_epochs):
 				# im_l = Image.fromarray(img_L.astype('uint8'), 'RGB')
 				# im_l.show()
 
-				# kfun = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm],[model_trip.layers[11].input[0],model_trip.layers[11].input[1],model_trip.layers[11].output])
+				# kfun = K.function([img_input_ref, roi_input_ref, img_input_dp, roi_input_dp,img_input_dm, roi_input_dm],[model_trip.layers[8].input[0],model_trip.layers[8].input[1],model_trip.layers[8].output])
 				# kfun([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
 
 				if iter_num % 5*C.siam_iter_frequancy == 0:
-					loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
-					## cosine version
+					## cosine version -last layer
+					# loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref])
+					## other versions
+					loss_before = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref])
+
+
+					## cosine version -last layer
+					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref], np.array([np.tile([0,1],(32,1))]))
+					## cosine version - embd
 					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
 					## l2 distance
-					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([[0]]))
-					loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm])
+					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref], np.array([[0]]))
+                    #
+
+					## cosine version -last layer
+					# loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref])
+					## other versions
+					loss_after = model_trip.predict([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref])
+
 					print('\n')
 					print('class {} loss before {} loss after{}'.format(rand_cls, np.mean(loss_before, axis=1),
 																		np.mean(loss_after, axis=1)))
 				else:
-					## cosine versio
+					## cosine version - embd
 					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([np.tile([0,1],(32,1))]))
-					# l2 distance
-					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm], np.array([[0]]))
+					## cosine version -last layer
+					# model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref], np.array([np.tile([0,1],(32,1))]))
+					## l2 distance
+					model_trip.train_on_batch([X_ref, R_ref, X_dp, R_dp, X_dm, R_dm,Y_ref], np.array([[0]]))
 
 
-				model_inner.save_weights(weight_path_tmp)
+				model_view_only.save_weights(weight_path_tmp)
 				model_classifier.load_weights(weight_path_tmp,by_name = True)
 
 				# loss_before = model_trip.predict([X_ref,R_ref,X_dp,R_dp,X_dm,R_dm])
@@ -831,13 +897,7 @@ for epoch_num in range(num_epochs):
 						best_succ_epoch = epoch_num
 						model_all.save_weights(C.model_path_epoch)
 
-				###test azimuth
-				for ii in range(10):
-					P_rpn = model_rpn.predict_on_batch(X)
 
-					R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], C, K.image_dim_ordering(), use_regr=True,
-											   overlap_thresh=0.7, max_boxes=300)
-					X2, Y1, Y2, Y_view = roi_helpers.calc_iou_new(R, img_data, C, class_mapping)
 				break
 
 		except Exception as e:
