@@ -21,7 +21,7 @@ import imageio
 
 def test_view_func(C,model_rpn,model_classifier):
 	base_dir = os.getcwd()
-	test_cls_all = ['aeroplane']
+	test_cls_all = ['aeroplane','bus','motorbike']
 	class_mapping = C.class_mapping
 	inv_class_mapping = {v: k for k, v in class_mapping.iteritems()}
 	backend = K.image_dim_ordering()
@@ -148,6 +148,7 @@ def test_view_func(C,model_rpn,model_classifier):
 	#### open images from file
 	## read the training data from pickle file or from annotations
 	# class_mapping = C.class_mapping
+	succ = []
 	for test_cls in test_cls_all:
 		good_img = 0
 		not_good = 0
@@ -318,8 +319,8 @@ def test_view_func(C,model_rpn,model_classifier):
 					bbox_threshold -= 0.1
 					# if visualise:
 					# 	display_image(img)
-		succ = float(count)/float(obj_num)*100.
-		string = 'for class {} -true count is {} out of {} from {} images . {} success'.format(test_cls,count,obj_num,good_img,succ)
+		succ.append(float(count)/float(obj_num)*100.)
+		string = 'for class {} -true count is {} out of {} from {} images . {} success'.format(test_cls,count,obj_num,good_img,float(count)/float(obj_num)*100.)
 		print(string)
 		mAP = float(mAP)/float(obj_num)*100.
 		print ("MAP is {}".format(mAP))
