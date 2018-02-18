@@ -473,7 +473,7 @@ iter_num = 0
 countNum = 0
 
 MAP = 0
-best_succ = 0
+best_succ = [0]
 best_succ_epoch = 0
 epoch_save_num = 5
 succ_vec= np.zeros([1,int(np.ceil(float(num_epochs)/float(epoch_save_num)))])
@@ -648,16 +648,16 @@ for epoch_num in range(num_epochs):
 				print('MAP is {}'.format(MAP))
 				## save weight every x epochs
 				if epoch_num%epoch_save_num == 0 and epoch_num !=0:
-					model_view_only.save_weights(weight_path_tmp)
-					model_classifier.load_weights(weight_path_tmp, by_name=True)
 					temp_ind = C.model_path.index(".hdf5")
 					C.model_path_epoch = C.model_path[:temp_ind] + '_epoch_{}'.format(epoch_num) + C.model_path[temp_ind:]
 					tmp_succ,MAP =test_view_func(C, model_rpn, model_classifier)
-					succ_vec[0, int(epoch_num / epoch_save_num)] =tmp_succ
-					# model_view_only.save_weights(weight_path_tmp)
-					# model_classifier.load_weights(weight_path_tmp,by_name=True)
+					model_view_only.save_weights(weight_path_tmp)
+					model_classifier.load_weights(weight_path_tmp,by_name=True)
+					succ_vec[0, int(epoch_num / epoch_save_num)] =sum(tmp_succ)
+					# plt.plot(succ_vec)
+					# plt.show()
 					if np.max(succ_vec) == succ_vec[0,int(epoch_num/epoch_save_num)]:
-						best_succ = succ_vec[0,int(epoch_num/epoch_save_num)]
+						best_succ = tmp_succ
 						best_succ_epoch = epoch_num
 						model_all.save_weights(C.model_path_epoch)
 
