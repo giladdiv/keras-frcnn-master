@@ -19,8 +19,8 @@ from sklearn.neighbors.classification import KNeighborsClassifier
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
-from skimage import color
-from skimage import img_as_float
+# from skimage import color
+# from skimage import img_as_float
 
 
 def get_real_coordinates(ratio, x1, y1, x2, y2):
@@ -168,8 +168,10 @@ test_From_File = False
 use_NN = False
 save_fig = False
 visualize = True
-test_idx = 203
-comp_type = 'regular'  # 'pred2bin', 'regular' , 'massa'
+# test_idx = [310,358,370,476,483,587,589,8875,1045,1331,1591,1654,1983,2000,2029,2123,2149,2153,2235,2401,2409,2504,2556,2778,2813]
+# test_idx = [2153]
+test_idx = [310,358,587,589,2401]
+comp_type = 'pred2bin'  # 'pred2bin', 'regular' , 'massa'
 # class_to_color = {C.class_mapping[v]: np.random.randint(0, 255, 3) for v in C.class_mapping}
 
 
@@ -193,10 +195,11 @@ try:
 	os.mkdir(eval_folder)
 except:
 	pass
-if save_fig:
-	result_folder = os.path.join(eval_folder,'Images_{}'.format(comp_type))
-	if not(os.path.exists(result_folder)):
-		os.mkdir(result_folder)
+# if save_fig:
+# result_folder = os.path.join(eval_folder,'Images_{}'.format(comp_type))
+result_folder = os.path.join(eval_folder,'Images_bbox_all'.format(comp_type))
+if not(os.path.exists(result_folder)):
+	os.mkdir(result_folder)
 
 
 test_cls = ['aeroplane','bicycle','boat','bus','car','chair','diningtable','motorbike','sofa','train', 'tvmonitor']
@@ -405,7 +408,8 @@ if not(test_From_File):
 	for idx, img_data in enumerate(test_imgs):
 		if idx %50 == 0:
 			print('{}/{}'.format(idx,len(test_imgs)))
-		if idx!= test_idx:
+		if not(idx in test_idx):
+		# if idx<3996:
 			continue
 		filepath = img_data['filepath']
 
@@ -498,6 +502,15 @@ if not(test_From_File):
 				azimuth = np.array(azimuths[key])
 			new_boxes, new_probs,new_azimuth,new_total,idx_az= roi_helpers.non_max_suppression_fast(bbox,prob,azimuth,az_total[key], overlap_thresh=0.5,use_az=True,use_total=True)
 
+			for jk in range(new_boxes.shape[0]):
+
+				(x1, y1, x2, y2) = new_boxes[jk, :]
+				det = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'class': key, 'prob': new_probs[jk],'azimuth':new_azimuth[jk],'azimuth_bin':pred2bins(new_total[jk,:])[0]}
+				if key in test_cls:
+					file_name = os.path.splitext(os.path.split(filepath)[1])[0]
+					txt_files[key].write('{} {} {} {} {} {} {} {}\n'.format(file_name,int(x1*fx),int(y1*fy),int(x2*fx),int(y2*fy),new_probs[jk],new_azimuth[jk],pred2bins(new_total[jk,:])[0]))
+				all_dets.append(det)
+
 			if save_fig:
 				try:
 					for jk in range(new_boxes.shape[0]):
@@ -532,40 +545,84 @@ if not(test_From_File):
 					pass
 
 			if visualize:
+				img_t = copy.deepcopy(img)
+				imgs = []
+				fig = plt.figure()
 				for tt in range(new_total.shape[0]):
+				# for tt in [0,1,3,4,5]:
 					prob1 = new_total[tt,:]
-					az_real = 0
-					fig = plt.figure()
-					img_t = copy.deepcopy(img)
+					# fig = plt.figure()
+					# img_t = copy.deepcopy(img)
 					# plt.title('image {} cls {}'.format(idx,key))
 					(x1, y1, x2, y2) = new_boxes[tt, :]
 
 					(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(1 / fx, x1, y1, x2, y2)
+					id_overlap = roi_helpers.overlap_display(img_data['bboxes'],[real_x1, real_y1, real_x2, real_y2])
+					if img_data['bboxes'][id_overlap]['class'] != key:
+						continue
 
 					cv2.rectangle(img_t, (real_x1, real_y1), (real_x2, real_y2), (
 						int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])), 2)
 					# im.show()
-					img_t = img_t[:, :, (2, 1, 0)]
-					id_overlap = roi_helpers.overlap_display(img_data['bboxes'],[real_x1, real_y1, real_x2, real_y2])
-					tmp_img= np.expand_dims(prob_az[key][idx_az[tt][-1]],axis =2)
+
+
+					tmp_img= np.expand_dims(softmax(prob_az[key][idx_az[tt][-1]]),axis =2)
 					tmp_img = tmp_img-min(tmp_img)
 					tmp_img = 255-tmp_img/max(tmp_img)*255
-					tmp_img = np.tile(tmp_img,[30,1,3])
-					tmp_img[:,int(img_data['bboxes'][id_overlap]['azimuth']),:] = [255,0,0]
-					tmp_img[:,new_azimuth[tt],:] = [0,255,0]
+					tmp_img = np.tile(tmp_img,[15,1,3])
+					if int(img_data['bboxes'][id_overlap]['azimuth']) < 357:
+						tmp_img[:,int(img_data['bboxes'][id_overlap]['azimuth']):int(img_data['bboxes'][id_overlap]['azimuth'])+2,:] = [255,0,0]
+					else:
+						tmp_img[:, int(img_data['bboxes'][id_overlap]['azimuth']):int(
+							img_data['bboxes'][id_overlap]['azimuth']) + 2, :] = [255, 0, 0]
+					if new_azimuth[tt] < 357:
+						tmp_img[:, new_azimuth[tt]:new_azimuth[tt]+2, :] = [0, 0, 255]
+					else:
+						tmp_img[:,new_azimuth[tt],:] = [0,0,255]
 
-					imgs = [Image.fromarray(img_t.astype('uint8')), Image.fromarray(tmp_img.astype('uint8'))]
-					# imgs    = [ im, a]
+					# img_t = img_t[:, :, (2, 1, 0)]
+					# imgs = [Image.fromarray(img_t.astype('uint8')), Image.fromarray(tmp_img.astype('uint8'))]
+					imgs.append(Image.fromarray(tmp_img.astype('uint8')))
 					# pick the image which is the smallest, and resize the others to match it (can be arbitrary image shape here)
+					# min_shape = sorted([i.size for i in imgs])[1][0]
+					# imgs_comb = []
+					# for ii in range(len(imgs)):
+					# 	imgs_comb.append(imgs[ii].resize([360, imgs[ii].size[1]]))
+					# imgs_comb = np.vstack((imgs_comb[0], imgs_comb[1]))
+					# # imgs_comb = imgs_comb[:,:,[2,1,0]]
+                    #
+					# flag_reg = discretize(float(new_azimuth[tt]), 24) == discretize(float(img_data['bboxes'][id_overlap]['azimuth']), 24)
+                    #
+					# gt_az = np.eye(360)[int(img_data['bboxes'][id_overlap]['azimuth'])]
+					# flag_pred = float(pred2bins(new_total[tt,:])[0]) == pred2bins(gt_az)[0]
+					# plt.imshow(imgs_comb)
+					# plt.yticks([])
+					# plt.savefig(result_folder+'/{}_{}_{}_{}_{}_{}_{}.png'.format(idx,key,tt,int(img_data['bboxes'][id_overlap]['azimuth']),int(new_azimuth[tt]),flag_reg,flag_pred), bbox_inches="tight")
+					# plt.close(fig)
+
+					# cv2.imwrite(result_folder+'/{}_{}_{}_{}_{}_{}_{}.jpg'.format(idx,key,tt,int(img_data['bboxes'][id_overlap]['azimuth']),int(new_azimuth[tt]),flag_reg,flag_pred),imgs_comb)
+				## show all bboxes
+				try:
+					img_t = img_t[:, :, (2, 1, 0)]
+					imgs.append(Image.fromarray(img_t.astype('uint8')))
 					min_shape = sorted([i.size for i in imgs])[1][0]
 					imgs_comb = []
 					for ii in range(len(imgs)):
 						imgs_comb.append(imgs[ii].resize([360, imgs[ii].size[1]]))
-					imgs_comb = np.vstack((imgs_comb[0], imgs_comb[1]))
-					imgs_comb = Image.fromarray(imgs_comb)
+					imgs_comb.reverse()
+					imgs_comb = np.vstack(tuple(imgs_comb))
 					plt.imshow(imgs_comb)
 					plt.yticks([])
-					plt.show()
+					plt.savefig(result_folder+'/{}_{}.png'.format(idx,key), bbox_inches="tight")
+					plt.close(fig)
+				except:
+					plt.close(fig)
+					pass
+
+					# imgs_comb = Image.fromarray(imgs_comb)
+					# plt.imshow(imgs_comb)
+					# plt.yticks([])
+					# plt.show()
 
 					# fig = plt.figure()
 					# prob1 = new_total[tt,:]
@@ -606,14 +663,7 @@ if not(test_From_File):
 					# plt.show()
 
 
-			for jk in range(new_boxes.shape[0]):
 
-				(x1, y1, x2, y2) = new_boxes[jk, :]
-				det = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'class': key, 'prob': new_probs[jk],'azimuth':new_azimuth[jk],'azimuth_bin':pred2bins(new_total[jk,:])[0]}
-				if key in test_cls:
-					file_name = os.path.splitext(os.path.split(filepath)[1])[0]
-					txt_files[key].write('{} {} {} {} {} {} {} {}\n'.format(file_name,int(x1*fx),int(y1*fy),int(x2*fx),int(y2*fy),new_probs[jk],new_azimuth[jk],pred2bins(new_total[jk,:])[0]))
-				all_dets.append(det)
 
 	for key in test_cls:
 		txt_files[key].close()

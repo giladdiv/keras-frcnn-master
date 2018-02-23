@@ -49,7 +49,7 @@ parser.add_option("--num_epochs", dest="num_epochs", help="Number of epochs.", d
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to store all the metadata related to the training (to be used when testing).",
 				default="config.pickle")
-parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_flip_cosine.hdf5')
+parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='models/model_flip_sub_lastlayer.hdf5')
 
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.",default ='./weights/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
@@ -69,7 +69,7 @@ fc_size = 360
 last_layer = (options.num_rois,cls_num*data_len)
 
 def mean_squared_error_gilad(y_true, y_pred):
-    return 1000*K.mean(K.square(y_pred - y_true), axis=-1)
+    return 10*K.mean(K.square(y_pred - y_true), axis=-1)
 
 
 def create_mat_siam(label=7,cls_num=21):
@@ -319,7 +319,7 @@ rms = RMSprop()
 
 ## siam network part
 C.siam_iter_frequancy = 6
-weight_path_init = os.path.join(base_path, 'models/model_FC_init.hdf5')
+weight_path_init = os.path.join(base_path, 'model_flip_sub_lastlayer_epoch_40.hdf5')
 # weight_path_tmp = os.path.join(base_path, 'tmp_weights.hdf5')
 weight_path_tmp = os.path.join(base_path, 'models/model_frcnn_siam_tmp.hdf5')
 NumOfCls = len(class_mapping)
@@ -415,14 +415,14 @@ def build_models(weight_path,init_models = False,train_view_only = False,create_
 		# view_flip = Activation('softmax')(view_flip_before)
 		# view_non_flip = Activation('softmax')(view_non_flip_before)
 
-		# flat_flip = Flatten()(view_flip)
-		# flat_non_flip = Flatten()(view_non_flip)
+		flat_flip = Flatten()(view_flip_before)
+		flat_non_flip = Flatten()(view_non_flip_before)
 
-		# distance_flip = Lambda(euclidean_distance,
-		# 		output_shape=eucl_dist_output_shape)([flat_non_flip, flat_flip])
+		distance_flip = Lambda(euclidean_distance,
+				output_shape=eucl_dist_output_shape)([flat_non_flip, flat_flip])
 
-		distance_flip = Lambda(cosine_distance,
-				   output_shape=cosine_dist_output_shape)([view_non_flip_before, view_flip_before])
+		# distance_flip = Lambda(cosine_distance,
+		# 		   output_shape=cosine_dist_output_shape)([view_non_flip_before, view_flip_before])
 
 		model_flip = Model([img_input_ref, roi_input_ref, img_input_flip, roi_input_flip,labels_input], [cls_ref,cls_flip,distance_flip])
 		model_flip.compile(optimizer=optimizer_trip, loss=[losses.class_loss_view_weight(len(classes_count),C.num_rois),losses.class_loss_view_weight(len(classes_count),C.num_rois),mean_squared_error_gilad])
@@ -473,7 +473,7 @@ iter_num = 0
 countNum = 0
 
 MAP = 0
-best_succ = 0
+best_succ = [0]
 best_succ_epoch = 0
 epoch_save_num = 5
 succ_vec= np.zeros([1,int(np.ceil(float(num_epochs)/float(epoch_save_num)))])
@@ -564,7 +564,10 @@ for epoch_num in range(num_epochs):
 			# loss_class = model_classifier.train_on_batch([X, X2[:, sel_samples_regular, :]], [Y1[:, sel_samples_regular, :], Y2[:, sel_samples_regular, :],Y_view[:, sel_samples_regular, :]])
 
 			#### train flip net
-			loss_flip = model_flip.train_on_batch([X, X2,X_flip, X2_flip,Y_view],[Y_view, Y_view_flip,np.array([np.tile([1],(32,1))])])
+			### for cosine dist
+			# loss_flip = model_flip.train_on_batch([X, X2,X_flip, X2_flip,Y_view],[Y_view, Y_view_flip,np.array([np.tile([1],(32,1))])])
+			## for euclidian dist
+			loss_flip = model_flip.train_on_batch([X, X2,X_flip, X2_flip,Y_view],[Y_view, Y_view_flip,np.array([[0]])])
 			# loss_flip = model_flip.train_on_batch([X, X2,X_flip, X2_flip,Y_view],[Y_view, Y_view_flip])
 			if iter_num%500 == 0 :
 				model_view_only.save_weights(weight_path_tmp)
@@ -645,16 +648,16 @@ for epoch_num in range(num_epochs):
 				print('MAP is {}'.format(MAP))
 				## save weight every x epochs
 				if epoch_num%epoch_save_num == 0 and epoch_num !=0:
-					model_view_only.save_weights(weight_path_tmp)
-					model_classifier.load_weights(weight_path_tmp, by_name=True)
 					temp_ind = C.model_path.index(".hdf5")
 					C.model_path_epoch = C.model_path[:temp_ind] + '_epoch_{}'.format(epoch_num) + C.model_path[temp_ind:]
 					tmp_succ,MAP =test_view_func(C, model_rpn, model_classifier)
-					succ_vec[0, int(epoch_num / epoch_save_num)] =tmp_succ
-					# model_view_only.save_weights(weight_path_tmp)
-					# model_classifier.load_weights(weight_path_tmp,by_name=True)
+					model_view_only.save_weights(weight_path_tmp)
+					model_classifier.load_weights(weight_path_tmp,by_name=True)
+					succ_vec[0, int(epoch_num / epoch_save_num)] =sum(tmp_succ)
+					# plt.plot(succ_vec)
+					# plt.show()
 					if np.max(succ_vec) == succ_vec[0,int(epoch_num/epoch_save_num)]:
-						best_succ = succ_vec[0,int(epoch_num/epoch_save_num)]
+						best_succ = tmp_succ
 						best_succ_epoch = epoch_num
 						model_all.save_weights(C.model_path_epoch)
 
