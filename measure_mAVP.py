@@ -143,6 +143,7 @@ parser.add_option("--config_filename", dest="config_filename", help=
 parser.add_option("-o", "--parser", dest="parser", help="Parser to use. One of simple or pascal_voc",
 				default="pascal_voc"),
 parser.add_option("--input_train_file", dest="input_train_file", help="if there is a pickle file for train data.",default='pickle_data/train_data_Wflip_all.pickle' )
+parser.add_option("-w","--input_wieght_file", dest="input_weight_file", help="if there is a pickle file for train data.",default='mistake' )
 
 (options, args) = parser.parse_args()
 
@@ -167,7 +168,7 @@ with open(config_output_filename, 'r') as f_in:
 test_From_File = False
 use_NN = False
 save_fig = False
-visualize = True
+visualize = False
 # test_idx = [310,358,370,476,483,587,589,8875,1045,1331,1591,1654,1983,2000,2029,2123,2149,2153,2235,2401,2409,2504,2556,2778,2813]
 # test_idx = [2153]
 test_idx = [310,358,587,589,2401]
@@ -178,9 +179,11 @@ comp_type = 'pred2bin'  # 'pred2bin', 'regular' , 'massa'
 curr_path = os.getcwd()
 test_path = os.path.join(curr_path,'VOCdevkit/VOC3D')
 # weight_name = 'Massa'
-weight_name = 'model_FC_weight_best'
+# weight_name = 'model_tripmix_l2_lastlayer_epoch_185'
+weight_name = options.input_weight_file
 # weight_name = 'model_trip_real_only_aeroplane_best'
 C.model_path = os.path.join(curr_path,'models/{}.hdf5'.format(weight_name))
+print('working on {}'.format(weight_name))
 
 if comp_type not in ['pred2bin', 'regular' , 'massa']:
 	print('***comp value is not valid*****')
@@ -197,9 +200,9 @@ except:
 	pass
 # if save_fig:
 # result_folder = os.path.join(eval_folder,'Images_{}'.format(comp_type))
-result_folder = os.path.join(eval_folder,'Images_bbox_all'.format(comp_type))
-if not(os.path.exists(result_folder)):
-	os.mkdir(result_folder)
+# result_folder = os.path.join(eval_folder,'Images_bbox_all'.format(comp_type))
+# if not(os.path.exists(result_folder)):
+# 	os.mkdir(result_folder)
 
 
 test_cls = ['aeroplane','bicycle','boat','bus','car','chair','diningtable','motorbike','sofa','train', 'tvmonitor']
@@ -408,9 +411,9 @@ if not(test_From_File):
 	for idx, img_data in enumerate(test_imgs):
 		if idx %50 == 0:
 			print('{}/{}'.format(idx,len(test_imgs)))
-		if not(idx in test_idx):
+		# if not(idx in test_idx):
 		# if idx<3996:
-			continue
+		# 	continue
 		filepath = img_data['filepath']
 
 		img = cv2.imread(filepath)
@@ -569,14 +572,14 @@ if not(test_From_File):
 					tmp_img= np.expand_dims(softmax(prob_az[key][idx_az[tt][-1]]),axis =2)
 					tmp_img = tmp_img-min(tmp_img)
 					tmp_img = 255-tmp_img/max(tmp_img)*255
-					tmp_img = np.tile(tmp_img,[15,1,3])
-					if int(img_data['bboxes'][id_overlap]['azimuth']) < 357:
-						tmp_img[:,int(img_data['bboxes'][id_overlap]['azimuth']):int(img_data['bboxes'][id_overlap]['azimuth'])+2,:] = [255,0,0]
+					tmp_img = np.tile(tmp_img,[30,1,3])
+					if int(img_data['bboxes'][id_overlap]['azimuth']) < 355:
+						tmp_img[:,int(img_data['bboxes'][id_overlap]['azimuth']):int(img_data['bboxes'][id_overlap]['azimuth'])+4,:] = [255,0,0]
 					else:
 						tmp_img[:, int(img_data['bboxes'][id_overlap]['azimuth']):int(
-							img_data['bboxes'][id_overlap]['azimuth']) + 2, :] = [255, 0, 0]
-					if new_azimuth[tt] < 357:
-						tmp_img[:, new_azimuth[tt]:new_azimuth[tt]+2, :] = [0, 0, 255]
+							img_data['bboxes'][id_overlap]['azimuth']), :] = [255, 0, 0]
+					if new_azimuth[tt] < 355:
+						tmp_img[:, new_azimuth[tt]:new_azimuth[tt]+4, :] = [0, 0, 255]
 					else:
 						tmp_img[:,new_azimuth[tt],:] = [0,0,255]
 
@@ -614,7 +617,7 @@ if not(test_From_File):
 					plt.imshow(imgs_comb)
 					plt.yticks([])
 					plt.savefig(result_folder+'/{}_{}.png'.format(idx,key), bbox_inches="tight")
-					plt.close(fig)
+
 				except:
 					plt.close(fig)
 					pass
